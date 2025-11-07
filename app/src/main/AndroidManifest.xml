@@ -3,7 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="com.example.database">
 
-    <!-- ✅ Core Permissions -->
+    <!-- Core Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -18,7 +18,7 @@
         <package android:name="com.ultraviolette.fotaservice"/>
     </queries>
 
-    <!-- ✅ Optional for system-privileged behavior -->
+    <!-- Optional for system-privileged behavior -->
     <uses-permission
         android:name="android.permission.MANAGE_USERS"
         tools:ignore="ProtectedPermissions" />
@@ -36,7 +36,7 @@
         android:debuggable="true"
         tools:ignore="HardcodedDebugMode,MissingApplicationIcon">
 
-        <!-- ✅ AIDL-enabled Foreground Service -->
+        <!-- AIDL-enabled Foreground Service -->
         <service
             android:name=".service.DatabaseBackgroundService"
             android:enabled="true"
@@ -44,12 +44,9 @@
             android:foregroundServiceType="dataSync"
             android:process=":fota_service"
             android:stopWithTask="false"
-            tools:ignore="ForegroundServicePermission">
+            tools:ignore="ForegroundServicePermission" />
 
-
-        </service>
-
-        <!-- ✅ Support Services -->
+        <!-- Support Services -->
         <service
             android:name=".service.UploadManager"
             android:enabled="true"
@@ -84,7 +81,17 @@
             android:foregroundServiceType="dataSync"
             tools:ignore="Instantiatable" />
 
-        <!-- ✅ Auto-start after boot or OTA -->
+        <!-- NEW: Emergency Upload Receiver - receives "upload_now" command from server/MQTT/ADB -->
+        <receiver
+            android:name=".service.EmergencyUploadReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter android:priority="1000">
+                <action android:name="com.ultraviolette.ACTION_EMERGENCY_UPLOAD" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Auto-start after boot or OTA -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:enabled="true"
