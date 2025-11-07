@@ -373,6 +373,7 @@ public class DatabaseBackgroundService extends Service {
             Timber.i("FOTA REQUEST: s3Key = %s", s3Key);
 
             // EXTRACT FILENAME
+            //TODO : Actuall filename should be given
             String fileName = "fota/fota.tar.xz";
 
             // TRIGGER DIRECT DOWNLOAD
