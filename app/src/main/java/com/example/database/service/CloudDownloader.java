@@ -1,13 +1,13 @@
-
 package com.example.database.service;
 
 import android.content.Context;
+import android.util.Log;
+
 import com.example.database.db.AppDatabase;
 import com.example.database.db.FileUploadDao;
 import com.example.database.db.FileUploadRecord;
 import com.example.database.db.FileDownloadDao;
 import com.example.database.db.FileDownloadRecord;
-import timber.log.Timber;
 
 import okhttp3.*;
 import org.json.JSONObject;
@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 
 public class CloudDownloader {
 
+    private static final String TAG = "CloudDownloader";
     private static final String LAMBDA_URL = "https://bpfsuu5xvj.execute-api.ap-south-1.amazonaws.com/default/s3uploadurlcreatorv1-dev-getPreSignedURLToPutToS3-dev";
 
     private final Context context;
@@ -30,43 +31,39 @@ public class CloudDownloader {
     public CloudDownloader(Context context, FileDownloadDao dao) {
         this.context = context;
         this.dao = dao;
-
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(60, TimeUnit.SECONDS)
                 .readTimeout(300, TimeUnit.SECONDS)
                 .writeTimeout(60, TimeUnit.SECONDS)
                 .build();
-
-        Timber.d("Created download HTTP client (5 min read timeout)");
+        Log.d(TAG, "Created download HTTP client (5 min read timeout)");
     }
 
     public void listS3Files() {
         try {
-            Timber.d("Discovering uploaded files for download...");
-
+            Log.d(TAG, "Discovering uploaded files for download...");
             AppDatabase db = AppDatabase.getInstance(context);
             FileUploadDao uploadDao = db.fileUploadDao();
-
             List<FileUploadRecord> successfulUploads = uploadDao.getSuccessfulRecords();
 
             if (successfulUploads.isEmpty()) {
-                Timber.i("No successful uploads found - nothing to download");
+                Log.i(TAG, "No successful uploads found - nothing to download");
                 return;
             }
 
-            Timber.i("Found %d successfully uploaded files", successfulUploads.size());
-
+            Log.i(TAG, "Found " + successfulUploads.size() + " successfully uploaded files");
             int newDownloads = 0;
+
             for (FileUploadRecord upload : successfulUploads) {
                 if (addUploadForDownload(upload)) {
                     newDownloads++;
                 }
             }
 
-            Timber.i("Added %d new files to download queue", newDownloads);
+            Log.i(TAG, "Added " + newDownloads + " new files to download queue");
 
         } catch (Exception e) {
-            Timber.e(e, "Error discovering uploaded files for download");
+            Log.e(TAG, "Error discovering uploaded files for download", e);
         }
     }
 
@@ -83,14 +80,14 @@ public class CloudDownloader {
                         0
                 );
                 dao.insert(record);
-                Timber.d("Added to download queue: %s", upload.fileName);
+                Log.d(TAG, "Added to download queue: " + upload.fileName);
                 return true;
             } else {
-                Timber.d("File already in download queue: %s (status: %s)", upload.fileName, existing.status);
+                Log.d(TAG, "File already in download queue: " + upload.fileName + " (status: " + existing.status + ")");
                 return false;
             }
         } catch (Exception e) {
-            Timber.e(e, "Error adding upload to download queue: %s", upload.fileName);
+            Log.e(TAG, "Error adding upload to download queue: " + upload.fileName, e);
             return false;
         }
     }
@@ -101,14 +98,14 @@ public class CloudDownloader {
             File uploadFile = new File(uploadQueueDir, fileName);
             if (uploadFile.exists()) {
                 long size = uploadFile.length();
-                Timber.d("Got file size from upload queue: %s = %d bytes", fileName, size);
+                Log.d(TAG, "Got file size from upload queue: " + fileName + " = " + size + " bytes");
                 return size;
             }
 
             File vendorFile = new File("/data/vendor/udp_socket", fileName);
             if (vendorFile.exists() && vendorFile.canRead()) {
                 long size = vendorFile.length();
-                Timber.d("Got file size from vendor directory: %s = %d bytes", fileName, size);
+                Log.d(TAG, "Got file size from vendor directory: " + fileName + " = " + size + " bytes");
                 return size;
             }
 
@@ -117,9 +114,8 @@ public class CloudDownloader {
             } else {
                 return 1024 * 1024;
             }
-
         } catch (Exception e) {
-            Timber.w("Could not determine file size for: %s, using 1MB estimate", fileName);
+            Log.w(TAG, "Could not determine file size for: " + fileName + ", using 1MB estimate");
             return 1024 * 1024;
         }
     }
@@ -127,8 +123,8 @@ public class CloudDownloader {
     public void downloadFile(FileDownloadRecord record, File targetFile) {
         try {
             long fileSize = record.fileSize;
-            Timber.i("STARTING DOWNLOAD: %s (%.2f MB)", record.fileName, fileSize / (1024.0 * 1024.0));
-            Timber.d("Download attempt #%d", record.retryCount + 1);
+            Log.i(TAG, String.format("STARTING DOWNLOAD: %s (%.2f MB)", record.fileName, fileSize / (1024.0 * 1024.0)));
+            Log.d(TAG, "Download attempt #" + (record.retryCount + 1));
 
             String presignedUrl = getPresignedDownloadUrl(record.fileName);
             boolean success = downloadFromS3(presignedUrl, targetFile, fileSize);
@@ -144,31 +140,29 @@ public class CloudDownloader {
                 targetFile.setReadable(true, false);
                 targetFile.setWritable(true, false);
 
-                Timber.i("DOWNLOAD SUCCESS: %s (%.2f MB)", record.fileName, actualSize / (1024.0 * 1024.0));
-                Timber.i("EXTERNAL SERVICE CAN ACCESS: %s", targetFile.getAbsolutePath());
+                Log.i(TAG, String.format("DOWNLOAD SUCCESS: %s (%.2f MB)", record.fileName, actualSize / (1024.0 * 1024.0)));
+                Log.i(TAG, "EXTERNAL SERVICE CAN ACCESS: " + targetFile.getAbsolutePath());
             } else {
                 updateRecordFailure(record, "S3 download failed");
             }
-
         } catch (Exception e) {
-            Timber.w("DOWNLOAD FAILED: %s", e.getMessage());
+            Log.w(TAG, "DOWNLOAD FAILED: " + e.getMessage());
             updateRecordFailure(record, e.getMessage());
         }
     }
 
-    // FIXED: Send only filename — Lambda adds "fota/"
     private String getPresignedDownloadUrl(String fileName) throws Exception {
         String cleanFileName = fileName
                 .replace("fota/", "")
                 .replace("test/", "");
 
         String jsonBody = "{\n" +
-                "  \"operation\": \"DL_FILE_EX\",\n" +
-                "  \"fileName\": \"" + cleanFileName + "\",\n" +
-                "  \"fileType\": \"application/octet-stream\"\n" +
+                " \"operation\": \"DL_FILE_EX\",\n" +
+                " \"fileName\": \"" + cleanFileName + "\",\n" +
+                " \"fileType\": \"application/octet-stream\"\n" +
                 "}";
 
-        Timber.d("Download Request JSON: %s", jsonBody);
+        Log.d(TAG, "Download Request JSON: " + jsonBody);
 
         RequestBody body = RequestBody.create(jsonBody, MediaType.parse("application/json"));
         Request request = new Request.Builder()
@@ -203,7 +197,7 @@ public class CloudDownloader {
             try (Response response = httpClient.newCall(request).execute()) {
                 if (!response.isSuccessful()) {
                     String error = response.body() != null ? response.body().string() : "No body";
-                    Timber.e("S3 failed: HTTP %d | %s", response.code(), error);
+                    Log.e(TAG, "S3 failed: HTTP " + response.code() + " | " + error);
                     return false;
                 }
 
@@ -222,10 +216,10 @@ public class CloudDownloader {
                         if (System.currentTimeMillis() - lastLog > 5000) {
                             if (expectedSize > 0) {
                                 double pct = (total * 100.0) / expectedSize;
-                                Timber.d("Progress: %.1f%% (%.2f/%.2f MB)", pct,
-                                        total / (1024.0 * 1024.0), expectedSize / (1024.0 * 1024.0));
+                                Log.d(TAG, String.format("Progress: %.1f%% (%.2f/%.2f MB)", pct,
+                                        total / (1024.0 * 1024.0), expectedSize / (1024.0 * 1024.0)));
                             } else {
-                                Timber.d("Downloaded: %.2f MB", total / (1024.0 * 1024.0));
+                                Log.d(TAG, String.format("Downloaded: %.2f MB", total / (1024.0 * 1024.0)));
                             }
                             lastLog = System.currentTimeMillis();
                         }
@@ -237,7 +231,7 @@ public class CloudDownloader {
                 }
             }
         } catch (Exception e) {
-            Timber.e(e, "Download exception");
+            Log.e(TAG, "Download exception", e);
             return false;
         }
     }
@@ -253,8 +247,8 @@ public class CloudDownloader {
         String now = sdf.format(new Date(record.timestamp));
         String retry = sdf.format(new Date(System.currentTimeMillis() + 30 * 60 * 1000));
 
-        Timber.w("FAILED: %s at %s", record.fileName, now);
-        Timber.w("Reason: %s", reason);
-        Timber.i("RETRY IN 30 MIN: %s", retry);
+        Log.w(TAG, "FAILED: " + record.fileName + " at " + now);
+        Log.w(TAG, "Reason: " + reason);
+        Log.i(TAG, "RETRY IN 30 MIN: " + retry);
     }
 }
