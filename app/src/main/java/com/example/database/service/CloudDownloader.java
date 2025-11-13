@@ -1,3 +1,19 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 package com.example.database.service;
 
 import android.content.Context;
@@ -9,15 +25,18 @@ import com.example.database.db.FileUploadRecord;
 import com.example.database.db.FileDownloadDao;
 import com.example.database.db.FileDownloadRecord;
 
-import okhttp3.*;
 import org.json.JSONObject;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+
+import okhttp3.*;
 
 public class CloudDownloader {
 
@@ -120,14 +139,15 @@ public class CloudDownloader {
         }
     }
 
-    public void downloadFile(FileDownloadRecord record, File targetFile) {
+    // Returns failure reason (null = success)
+    public String downloadFile(FileDownloadRecord record, File targetFile) {
         try {
             long fileSize = record.fileSize;
             Log.i(TAG, String.format("STARTING DOWNLOAD: %s (%.2f MB)", record.fileName, fileSize / (1024.0 * 1024.0)));
             Log.d(TAG, "Download attempt #" + (record.retryCount + 1));
 
             String presignedUrl = getPresignedDownloadUrl(record.fileName);
-            boolean success = downloadFromS3(presignedUrl, targetFile, fileSize);
+            boolean success = downloadFromS3(presignedUrl, targetFile, fileSize, record); // Pass record
 
             if (success) {
                 long actualSize = targetFile.length();
@@ -142,19 +162,31 @@ public class CloudDownloader {
 
                 Log.i(TAG, String.format("DOWNLOAD SUCCESS: %s (%.2f MB)", record.fileName, actualSize / (1024.0 * 1024.0)));
                 Log.i(TAG, "EXTERNAL SERVICE CAN ACCESS: " + targetFile.getAbsolutePath());
+                return null;
             } else {
-                updateRecordFailure(record, "S3 download failed");
+                String reason = getFailureReason(record.failureReason);
+                updateRecordFailure(record, reason);
+                return reason;
             }
         } catch (Exception e) {
+            String reason = "UNKNOWN_ERROR: " + e.getMessage();
+            updateRecordFailure(record, reason);
             Log.w(TAG, "DOWNLOAD FAILED: " + e.getMessage());
-            updateRecordFailure(record, e.getMessage());
+            return reason;
         }
     }
 
+    private String getFailureReason(String rawReason) {
+        if (rawReason == null) return "UNKNOWN_ERROR";
+        if (rawReason.contains("HTTP 404") || rawReason.contains("NoSuchKey")) return "FILE_NOT_FOUND";
+        if (rawReason.contains("HTTP 403") || rawReason.contains("AccessDenied")) return "FILE_NOT_FOUND";
+        if (rawReason.contains("timeout") || rawReason.contains("network") || rawReason.contains("connect")) return "NETWORK_ERROR";
+        if (rawReason.contains("HTTP 500") || rawReason.contains("InternalError")) return "SERVER_ERROR";
+        return "UNKNOWN_ERROR";
+    }
+
     private String getPresignedDownloadUrl(String fileName) throws Exception {
-        String cleanFileName = fileName
-                .replace("fota/", "")
-                .replace("test/", "");
+        String cleanFileName = fileName.replace("fota/", "").replace("test/", "");
 
         String jsonBody = "{\n" +
                 " \"operation\": \"DL_FILE_EX\",\n" +
@@ -165,10 +197,7 @@ public class CloudDownloader {
         Log.d(TAG, "Download Request JSON: " + jsonBody);
 
         RequestBody body = RequestBody.create(jsonBody, MediaType.parse("application/json"));
-        Request request = new Request.Builder()
-                .url(LAMBDA_URL)
-                .post(body)
-                .build();
+        Request request = new Request.Builder().url(LAMBDA_URL).post(body).build();
 
         try (Response response = httpClient.newCall(request).execute()) {
             if (!response.isSuccessful() || response.body() == null) {
@@ -187,17 +216,38 @@ public class CloudDownloader {
         }
     }
 
-    private boolean downloadFromS3(String presignedUrl, File targetFile, long expectedSize) {
+    // Now accepts record to set failureReason
+    private boolean downloadFromS3(String presignedUrl, File targetFile, long expectedSize, FileDownloadRecord record) {
         try {
-            Request request = new Request.Builder()
-                    .url(presignedUrl)
-                    .get()
-                    .build();
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                boolean created = parentDir.mkdirs();
+                if (created) {
+                    parentDir.setReadable(true, false);
+                    parentDir.setWritable(true, false);
+                    Log.i(TAG, "CREATED DIR: " + parentDir.getAbsolutePath());
+                } else {
+                    Log.e(TAG, "FAILED TO CREATE DIR: " + parentDir.getAbsolutePath());
+                    return false;
+                }
+            }
+
+            Request request = new Request.Builder().url(presignedUrl).get().build();
 
             try (Response response = httpClient.newCall(request).execute()) {
                 if (!response.isSuccessful()) {
                     String error = response.body() != null ? response.body().string() : "No body";
                     Log.e(TAG, "S3 failed: HTTP " + response.code() + " | " + error);
+
+                    if (response.code() == 404) {
+                        record.failureReason = "HTTP 404 - FILE_NOT_FOUND";
+                    } else if (response.code() == 403) {
+                        record.failureReason = "HTTP 403 - ACCESS_DENIED";
+                    } else if (response.code() >= 500) {
+                        record.failureReason = "HTTP " + response.code() + " - SERVER_ERROR";
+                    } else {
+                        record.failureReason = "HTTP " + response.code() + " - " + error;
+                    }
                     return false;
                 }
 
@@ -213,7 +263,7 @@ public class CloudDownloader {
                         out.write(buffer, 0, read);
                         total += read;
 
-                        if (System.currentTimeMillis() - lastLog > 5000) {
+                        if (System.currentTimeMillis() - lastLog > 1000) {
                             if (expectedSize > 0) {
                                 double pct = (total * 100.0) / expectedSize;
                                 Log.d(TAG, String.format("Progress: %.1f%% (%.2f/%.2f MB)", pct,
@@ -232,6 +282,7 @@ public class CloudDownloader {
             }
         } catch (Exception e) {
             Log.e(TAG, "Download exception", e);
+            record.failureReason = "EXCEPTION: " + e.getMessage();
             return false;
         }
     }
