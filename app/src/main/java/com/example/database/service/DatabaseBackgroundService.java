@@ -1,3 +1,5 @@
+
+
 package com.example.database.service;
 
 import android.app.Notification;
@@ -27,10 +29,7 @@ import com.ultraviolette.fotaservice.IFotaS3Events;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
-
-import timber.log.Timber;
 
 public class DatabaseBackgroundService extends Service {
 
@@ -54,14 +53,10 @@ public class DatabaseBackgroundService extends Service {
     private static final int MAX_RETRY_ATTEMPTS = 5;
     private static final long RETRY_INTERVAL_MS = 30_000; // retry every 30 seconds
 
-    // Maintain AIDL listener list safely
-
-    // Local AIDL binder for external apps to connect
-
     @Override
     public void onCreate() {
         super.onCreate();
-        Timber.i("DatabaseBackgroundService created");
+        Log.i(TAG, "DatabaseBackgroundService created");
 
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, createNotification("Service initializing..."));
@@ -71,50 +66,18 @@ public class DatabaseBackgroundService extends Service {
         workerThread.start();
         workerHandler = new Handler(workerThread.getLooper());
 
-        // Start FOTA binding
-        //bindToFotaService();
-
-        // Schedule periodic upload/download
         scheduleRepeatingTask();
     }
-
-/*    private void bindToFotaService() {
-        Intent intent = new Intent();
-        intent.setComponent(new ComponentName(
-                "com.ultraviolette.fotaservice",
-                "com.ultraviolette.fotaservice.FotaService"
-        ));
-        try {
-            boolean bound = bindService(intent, fotaConnection, BIND_AUTO_CREATE);
-
-            if (bound) {
-                Log.i(TAG, "Successfully initiated binding to FotaService");
-                fotaBindAttempts = 0;
-            } else {
-                Log.e(TAG, "Failed to initiate binding to FotaService");
-                scheduleFotaServiceRetry();
-            }
-        } catch (SecurityException e) {
-            Log.e(TAG, "SecurityException binding to FotaService: " + e.getMessage());
-            scheduleFotaServiceRetry();
-        }
-    }*/
 
     private final IFotaS3Events.Stub binder = new IFotaS3Events.Stub() {
         @Override
         public void fotaDownloadRequest(String s3Key) throws RemoteException {
             Log.d(TAG, "Received FOTA download request for: " + s3Key);
-            Timber.i("FOTA REQUEST: s3Key = %s", s3Key);
+            Log.i(TAG, "FOTA REQUEST: s3Key = " + s3Key);
 
-            // EXTRACT FILENAME
-            //TODO : Actuall filename should be given
-            String fileName = "fota/fota.tar.xz";
-
-            // TRIGGER DIRECT DOWNLOAD
+            String fileName = "fota/fota.tar";
             triggerOtaDownloadDirectly(fileName);
-
-            // STILL NOTIFY CALLBACKS (as before)
-            notifyOtaAvailable("SUCCESS");
+            // REMOVED: notifyOtaAvailable("SUCCESS") — now called only after success
         }
 
         @Override
@@ -138,33 +101,33 @@ public class DatabaseBackgroundService extends Service {
 
     private String extractFileName(String s3Key) {
         if (s3Key == null || s3Key.trim().isEmpty()) {
-            Timber.w("s3Key is null or empty, using fallback");
+            Log.w(TAG, "s3Key is null or empty, using fallback");
             return "ota_fallback.bin";
         }
         int slash = s3Key.lastIndexOf('/');
         String name = slash >= 0 ? s3Key.substring(slash + 1) : s3Key;
-        Timber.d("extractFileName: %s → %s", s3Key, name);
+        Log.d(TAG, "extractFileName: " + s3Key + " to " + name);
         return name;
     }
 
-    // DIRECT DOWNLOAD — NO DATABASE DISCOVERY
     private void triggerOtaDownloadDirectly(String fileName) {
         if (fileName == null || fileName.trim().isEmpty()) {
-            Timber.e("triggerOtaDownloadDirectly: Invalid filename");
-            return ;
+            Log.e(TAG, "triggerOtaDownloadDirectly: Invalid filename");
+            notifyOtaAvailable("FAILED");
+            return;
         }
 
         Executors.newSingleThreadExecutor().execute(() -> {
-            Timber.i("DIRECT OTA DOWNLOAD STARTED: %s", fileName);
+            Log.i(TAG, "DIRECT OTA DOWNLOAD STARTED: " + fileName);
             updateNotification("Downloading OTA: " + fileName);
 
-            File downloadDir = new File("/data/local/tmp/cloud_download");
+            File downloadDir = new File("/data/vendor/uv_fota/fota");
             try {
                 if (!downloadDir.exists()) {
                     boolean created = downloadDir.mkdirs();
                     downloadDir.setReadable(true, false);
                     downloadDir.setWritable(true, false);
-                    Timber.i("Download dir created: %s (created=%b)", downloadDir.getAbsolutePath(), created);
+                    Log.i(TAG, "Download dir created: " + downloadDir.getAbsolutePath() + " (created=" + created + ")");
                 }
 
                 AppDatabase db = AppDatabase.getInstance(getApplicationContext());
@@ -174,60 +137,65 @@ public class DatabaseBackgroundService extends Service {
                 File targetFile = new File(downloadDir, fileName);
                 FileDownloadRecord record = dao.getRecordByFileName(fileName);
 
-                // ALREADY DOWNLOADED?
                 if (record != null && "completed".equals(record.status) && targetFile.exists()) {
-                    Timber.i("OTA ALREADY DOWNLOADED: %s (%d bytes)", fileName, targetFile.length());
+                    Log.i(TAG, "OTA ALREADY DOWNLOADED: " + fileName + " (" + targetFile.length() + " bytes)");
                     updateNotification("OTA ready: " + fileName);
                     notifyOtaReady(fileName);
+                    notifyOtaAvailable("SUCCESS");  // Already exists → SUCCESS
                     return;
                 }
 
-                // CREATE OR RESET RECORD
                 if (record == null) {
                     record = new FileDownloadRecord(fileName, 0, "pending", null, System.currentTimeMillis(), 0);
                     long id = dao.insert(record);
-                    Timber.d("New download record: id=%d, file=%s", id, fileName);
+                    Log.d(TAG, "New download record: id=" + id + ", file=" + fileName);
                 } else {
                     record.status = "pending";
                     record.failureReason = null;
                     record.timestamp = System.currentTimeMillis();
                     dao.update(record);
-                    Timber.d("Record reset to pending: %s", fileName);
+                    Log.d(TAG, "Record reset to pending: " + fileName);
                 }
 
-                // START DOWNLOAD
-                Timber.i("DOWNLOADING OTA: %s → %s", fileName, targetFile.getAbsolutePath());
-                downloader.downloadFile(record, targetFile);
+                Log.i(TAG, "DOWNLOADING OTA: " + fileName + " to " + targetFile.getAbsolutePath());
+                String failureReason = downloader.downloadFile(record, targetFile);
 
-                // SUCCESS?
                 if ("completed".equals(record.status) && targetFile.exists()) {
-                    Timber.i("OTA DOWNLOAD SUCCESS: %s (%d bytes)", fileName, targetFile.length());
+                    Log.i(TAG, "OTA DOWNLOAD SUCCESS: " + fileName + " (" + targetFile.length() + " bytes)");
                     updateNotification("OTA downloaded: " + fileName);
                     notifyOtaReady(fileName);
+                    notifyOtaAvailable("SUCCESS");  // ONLY ON SUCCESS
                 } else {
-                    String reason = record.failureReason != null ? record.failureReason : "Unknown";
-                    Timber.w("OTA DOWNLOAD FAILED: %s | Reason: %s", fileName, reason);
-                    updateNotification("OTA failed: " + fileName);
+                    String reason = failureReason != null ? failureReason : "Unknown";
+                    Log.w(TAG, "OTA DOWNLOAD FAILED: " + fileName + " | Reason: " + reason);
+                    updateNotification("OTA failed: " + fileName + " (" + reason + ")");
+
+                    if ("FILE_NOT_FOUND".equals(reason)) {
+                        Log.e(TAG, "FILE NOT FOUND ON S3 — Check Lambda key: " + fileName);
+                    } else if ("NETWORK_ERROR".equals(reason)) {
+                        Log.e(TAG, "NETWORK ISSUE — Retry in 30 min");
+                    }
+                    notifyOtaAvailable("FAILED");  // ON ANY FAILURE
                 }
 
             } catch (Exception e) {
-                Timber.e(e, "FATAL: OTA download crashed for %s", fileName);
-                updateNotification("OTA error");
+                Log.e(TAG, "FATAL: OTA download crashed for " + fileName, e);
+                updateNotification("OTA error: " + e.getMessage());
+                notifyOtaAvailable("FAILED");
             }
         });
     }
 
     private void notifyOtaReady(String fileName) {
-        File file = new File("/data/local/tmp/cloud_download", fileName);
+        File file = new File("/data/vendor/uv_fota/fota", fileName);
         if (file.exists()) {
-            Timber.i("OTA FILE READY: %s (%d bytes)", file.getAbsolutePath(), file.length());
+            Log.i(TAG, "OTA FILE READY: " + file.getAbsolutePath() + " (" + file.length() + " bytes)");
 
-            // Optional: Send broadcast
             Intent intent = new Intent("com.ultraviolette.OTA_READY");
             intent.putExtra("file_path", file.getAbsolutePath());
             intent.putExtra("file_name", fileName);
             sendBroadcast(intent);
-            Timber.d("Broadcast: com.ultraviolette.OTA_READY | %s", file.getAbsolutePath());
+            Log.d(TAG, "Broadcast: com.ultraviolette.OTA_READY | " + file.getAbsolutePath());
         }
     }
 
@@ -243,40 +211,6 @@ public class DatabaseBackgroundService extends Service {
         }
     }
 
-/*    private final ServiceConnection fotaConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            fotaService = IFotaCloudEvents.Stub.asInterface(service);
-            Log.i(TAG, " Bound to external FotaService");
-
-            if (fotaService != null) {
-                try {
-                    fotaService.sendOtaData("HIMU_v1.0.3", "https://update-server.com/firmware.bin");
-                    Log.i(TAG, "OTA data sent to FotaService");
-                } catch (RemoteException e) {
-                    Log.e(TAG, "RemoteException while sending OTA", e);
-                }
-            }
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            fotaService = null;
-            Log.w(TAG, "FotaService disconnected");
-            scheduleFotaServiceRetry();
-        }
-    };
-
-    private void scheduleFotaServiceRetry() {
-        if (fotaBindAttempts < MAX_RETRY_ATTEMPTS) {
-            fotaBindAttempts++;
-            mainHandler.postDelayed(this::bindToFotaService, RETRY_INTERVAL_MS);
-            Log.i(TAG, "Retrying FotaService bind (attempt " + fotaBindAttempts + ")");
-        } else {
-            Log.e(TAG, "Max retry attempts reached for FotaService binding");
-        }
-    }*/
-
     private void scheduleRepeatingTask() {
         workerHandler.post(new Runnable() {
             @Override
@@ -289,38 +223,35 @@ public class DatabaseBackgroundService extends Service {
 
     private void performUploadDownload() {
         try {
-            Timber.i(" Performing upload/download cycle...");
+            Log.i(TAG, "Performing upload/download cycle...");
             updateNotification("Uploading bike data...");
             UploadManager.processFiles(getApplicationContext());
 
-            updateNotification(" Downloading files...");
+            updateNotification("Downloading files...");
             CloudDownloadManager.processDownloads(getApplicationContext());
 
             updateNotification("Cycle complete - Next in 15 min");
         } catch (Exception e) {
-            Timber.e(e, " Error in upload/download cycle");
-            updateNotification(" Error - retrying in 15 minutes");
+            Log.e(TAG, "Error in upload/download cycle", e);
+            updateNotification("Error - retrying in 15 minutes");
         }
     }
 
     private void processOtaData(String version, String payloadUrl) {
-        Timber.i(" Processing OTA v%s (%s)", version, payloadUrl);
+        Log.i(TAG, "Processing OTA v" + version + " (" + payloadUrl + ")");
         updateNotification("Processing OTA v" + version + "...");
         try {
-            // Example OTA handler
-            Timber.i(" Starting OTA download...");
-            // CloudDownloadManager.downloadOtaFile(getApplicationContext(), payloadUrl, version);
-            updateNotification(" OTA v" + version + " processed");
+            Log.i(TAG, "Starting OTA download...");
+            updateNotification("OTA v" + version + " processed");
         } catch (Exception e) {
-            Timber.e(e, "OTA processing failed");
+            Log.e(TAG, "OTA processing failed", e);
             updateNotification("OTA failed");
         }
     }
 
     private void createNotificationChannel() {
         notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                notificationManager.getNotificationChannel(CHANNEL_ID) == null) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && notificationManager.getNotificationChannel(CHANNEL_ID) == null) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW);
             channel.setDescription("Bike data upload/download with OTA binding");
@@ -346,17 +277,16 @@ public class DatabaseBackgroundService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Timber.i(" onStartCommand triggered");
+        Log.i(TAG, "onStartCommand triggered");
         updateNotification("Running periodic tasks...");
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
-        Timber.w(" DatabaseBackgroundService destroyed");
+        Log.w(TAG, "DatabaseBackgroundService destroyed");
         if (workerHandler != null) workerHandler.removeCallbacksAndMessages(null);
         if (workerThread != null) workerThread.quitSafely();
-        //unbindService(fotaConnection);
         stopForeground(true);
         super.onDestroy();
     }
@@ -364,7 +294,7 @@ public class DatabaseBackgroundService extends Service {
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
-        Timber.i(" AIDL client binding to DatabaseBackgroundService");
+        Log.i(TAG, "AIDL client binding to DatabaseBackgroundService");
         return binder;
     }
 }
