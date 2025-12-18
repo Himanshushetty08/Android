@@ -126,3 +126,5 @@ public class NetworkSelector {
         return score;
     }
 }
+
+//todo: while uploading if wifi disconnects te whole network must reset

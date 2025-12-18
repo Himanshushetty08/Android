@@ -158,60 +158,40 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
-import android.widget.Toast;
+import android.util.Log;
+
 
 import com.example.database.service.DatabaseBackgroundService;
 
-import timber.log.Timber;
+
+
 
 public class BootReceiver extends BroadcastReceiver {
+
+    private static final String TAG = "BootReceiver";
 
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
-        Timber.i("📡 BootReceiver: Received action -> %s", action);
+        Log.i(TAG, "📡 BootReceiver: Received action -> " + action);
 
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)
-                || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
-                || Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)
-                || Intent.ACTION_PACKAGE_REPLACED.equals(action)) {
+                || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
 
-            Toast.makeText(context, "BootReceiver triggered", Toast.LENGTH_SHORT).show();
-            Timber.i("⚙️ BootReceiver: Preparing to start DatabaseBackgroundService...");
+            Log.i(TAG, "⚙️ BootReceiver: Starting DatabaseBackgroundService...");
 
-            // ✅ Check if battery optimizations are blocking the app
+            Intent serviceIntent = new Intent(context, DatabaseBackgroundService.class);
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    String packageName = context.getPackageName();
-                    android.os.PowerManager pm =
-                            (android.os.PowerManager) context.getSystemService(Context.POWER_SERVICE);
-                    if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                        Timber.w("⚠️ BootReceiver: Battery optimization is ON for this app");
-                        Intent settingsIntent =
-                                new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
-                        settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        context.startActivity(settingsIntent);
-                    }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(serviceIntent);
+                    Log.i(TAG, "✅ BootReceiver: Foreground service started successfully");
+                } else {
+                    context.startService(serviceIntent);
+                    Log.i(TAG, "✅ BootReceiver: Background service started successfully");
                 }
             } catch (Exception e) {
-                Timber.e(e, "❌ BootReceiver: Failed to check battery optimization status");
+                Log.e(TAG, "❌ BootReceiver: Failed to start DatabaseBackgroundService", e);
             }
-
-            // ✅ Delay actual start slightly to ensure boot processes finish
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                Intent serviceIntent = new Intent(context, DatabaseBackgroundService.class);
-                try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        context.startForegroundService(serviceIntent);
-                        Timber.i("✅ BootReceiver: Foreground service started successfully");
-                    } else {
-                        context.startService(serviceIntent);
-                        Timber.i("✅ BootReceiver: Background service started successfully");
-                    }
-                } catch (Exception e) {
-                    Timber.e(e, "❌ BootReceiver: Failed to start DatabaseBackgroundService");
-                }
-            }, 6000); // ⏱️ 6 seconds delay after boot
         }
     }
 }

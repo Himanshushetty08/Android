@@ -14,7 +14,7 @@ import androidx.room.RoomDatabase;
 
 @Database(
         entities = {FileUploadRecord.class, FileDownloadRecord.class},
-        version = 2,  // ✅ UPDATED: Increment version for new table
+        version = 3,  // ✅ UPDATED: Increment version for new table
         exportSchema = false
 )
 public abstract class AppDatabase extends RoomDatabase {

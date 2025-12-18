@@ -79,12 +79,17 @@
 package com.example.database.service;
 
 import android.content.Context;
+import android.util.Log;
+
 import androidx.annotation.NonNull;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
 import androidx.work.ExistingPeriodicWorkPolicy;
+
+import com.amazonaws.services.securitytoken.model.Tag;
+
 import timber.log.Timber;
 
 import java.util.concurrent.TimeUnit;
@@ -98,7 +103,7 @@ public class UploadJobService extends Worker {
     @NonNull
     @Override
     public Result doWork() {
-        Timber.i("UploadJobService: Scheduled job fired by WorkManager");
+        Log.i("UploadJobService", "UploadJobService: Scheduled upload fired by WorkManager");
 
         // ✅ EXISTING: Process uploads
         UploadManager.processFiles(getApplicationContext());

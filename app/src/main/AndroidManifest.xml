@@ -3,28 +3,18 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="com.example.database">
 
-    <!-- Core Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_PRIVILEGED_PHONE_STATE"
+        tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="com.ultraviolette.permission.BIND_FOTA_SERVICE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
-    <queries>
-        <package android:name="com.ultraviolette.fotaservice"/>
-    </queries>
-
-    <!-- Optional for system-privileged behavior -->
-    <uses-permission
-        android:name="android.permission.MANAGE_USERS"
-        tools:ignore="ProtectedPermissions" />
-    <uses-permission
-        android:name="android.permission.PACKAGE_USAGE_STATS"
-        tools:ignore="ProtectedPermissions" />
 
     <application
         android:name=".App"
@@ -36,24 +26,26 @@
         android:debuggable="true"
         tools:ignore="HardcodedDebugMode,MissingApplicationIcon">
 
-        <!-- AIDL-enabled Foreground Service -->
+        <!-- FOTA Download Service -->
         <service
             android:name=".service.DatabaseBackgroundService"
             android:enabled="true"
             android:exported="true"
             android:foregroundServiceType="dataSync"
-            android:process=":fota_service"
             android:stopWithTask="false"
             tools:ignore="ForegroundServicePermission" />
 
-        <!-- Support Services -->
+        <!-- NEW: Dedicated MQTT Upload Service (AIDL) Service -->
         <service
-            android:name=".service.UploadManager"
+            android:name=".service.MqttUploadService"
             android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
-            tools:ignore="Instantiatable" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.ultraviolette.uvmqtt.MQTT_FILE_SERVICE" />
+            </intent-filter>
+        </service>
 
+        <!-- Other services -->
         <service
             android:name=".service.UploadJobService"
             android:enabled="true"
@@ -81,7 +73,10 @@
             android:foregroundServiceType="dataSync"
             tools:ignore="Instantiatable" />
 
-        <!-- NEW: Emergency Upload Receiver - receives "upload_now" command from server/MQTT/ADB -->
+        <!--— UploadManager is NOT a Service -->
+        <!-- <service android:name=".service.UploadManager" ... /> -->
+
+        <!-- Emergency Upload Receiver -->
         <receiver
             android:name=".service.EmergencyUploadReceiver"
             android:enabled="true"
@@ -91,7 +86,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Auto-start after boot or OTA -->
+        <!-- Boot Receiver -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:enabled="true"
