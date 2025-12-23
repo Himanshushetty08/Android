@@ -142,13 +142,30 @@ public class CloudDownloader {
     }
 
     // SPECIAL METHOD — ONLY FOR USER/SERVER TRIGGERED FOTA
+
+
+
     public String downloadFileFotaDirect(FileDownloadRecord record, File targetFile) {
         Log.w(TAG, "FOTA USER-TRIGGERED → BYPASSING ALL BACKGROUND PROTECTIONS");
-        return downloadFileInternal(record, targetFile, true);
+
+        // CRITICAL FIX: Refresh record from DB to ensure we have the correct ID
+        FileDownloadRecord freshRecord = dao.getRecordByFileName(record.fileName);
+        if (freshRecord == null) {
+            Log.e(TAG, "CRITICAL: Record not found in DB for: " + record.fileName);
+            return "RECORD_NOT_FOUND";
+        }
+
+        Log.w(TAG, "FRESH RECORD FROM DB → ID: " + freshRecord.id + " | Status: " + freshRecord.status);
+        return downloadFileInternal(freshRecord, targetFile, true);
     }
 
     private String downloadFileInternal(FileDownloadRecord record, File targetFile, boolean isFotaTrigger) {
         try {
+            Log.w(TAG, "=== DOWNLOAD START ===");
+            Log.w(TAG, "Record ID: " + record.id);
+            Log.w(TAG, "Record Status: " + record.status);
+            Log.w(TAG, "Record FileName: " + record.fileName);
+
             long expectedSize = record.fileSize;
 
             // BULLETPROOF RESUME — DISK IS THE SOURCE OF TRUTH
@@ -190,8 +207,9 @@ public class CloudDownloader {
             if (resumeFrom > record.downloadedBytes || record.downloadedBytes == 0) {
                 record.downloadedBytes = resumeFrom;
                 record.fileSize = Math.max(record.fileSize, resumeFrom);
+                Log.w(TAG, "BEFORE UPDATE #1 → Record ID: " + record.id + " | Status: " + record.status);
                 dao.update(record);
-                Log.w(TAG, "FORCED RESUME SYNC → DB now says " + formatSize(resumeFrom) + " downloaded");
+                Log.w(TAG, "AFTER UPDATE #1 → Synced downloadedBytes to " + formatSize(resumeFrom));
             }
 
             Log.i(TAG, String.format("STARTING DOWNLOAD: %s | Resume: %s | Total: %s",
@@ -204,6 +222,11 @@ public class CloudDownloader {
             String presignedUrl = getPresignedDownloadUrl(record.fileName, isFotaTrigger);
             boolean success = downloadFromS3WithResume(presignedUrl, targetFile, expectedSize, record);
 
+            Log.w(TAG, "=== DOWNLOAD RESULT ===");
+            Log.w(TAG, "Success: " + success);
+            Log.w(TAG, "Record ID: " + record.id);
+            Log.w(TAG, "Record Status (before update): " + record.status);
+
             if (success) {
                 long actualSize = targetFile.length();
                 record.status = "completed";
@@ -211,7 +234,14 @@ public class CloudDownloader {
                 record.fileSize = actualSize;
                 record.downloadedBytes = actualSize;
                 record.timestamp = System.currentTimeMillis();
+
+                Log.w(TAG, "BEFORE FINAL UPDATE → Record ID: " + record.id + " | Setting status to: completed");
                 dao.update(record);
+                Log.w(TAG, "AFTER FINAL UPDATE → dao.update() called successfully");
+
+                // VERIFY IT STUCK
+                FileDownloadRecord verification = dao.getRecordByFileName(record.fileName);
+                Log.w(TAG, "VERIFICATION FROM DB → Status: " + (verification != null ? verification.status : "NULL"));
 
                 targetFile.setReadable(true, false);
                 targetFile.setWritable(true, false);
@@ -219,16 +249,6 @@ public class CloudDownloader {
 
                 Log.i(TAG, String.format("DOWNLOAD SUCCESS: %s (%s)", record.fileName, formatSize(actualSize)));
                 Log.i(TAG, "EXTERNAL SERVICE CAN ACCESS: " + targetFile.getAbsolutePath());
-
-                // CRITICAL: Only for FOTA — delete upload record so 15-min service never sees it again
-//                if (isFotaTrigger && record.fileName.startsWith("fota/")) {
-//                    try {
-//                        AppDatabase.getInstance(context).fileUploadDao().deleteByFileName(record.fileName);
-//                        Log.w(TAG, "FOTA CLEANUP → Upload record deleted from DB (no more auto-trigger)");
-//                    } catch (Exception e) {
-//                        Log.w(TAG, "Failed to delete upload record", e);
-//                    }
-//                }
 
                 return null;
             } else {
@@ -243,6 +263,108 @@ public class CloudDownloader {
             return reason;
         }
     }
+//    public String downloadFileFotaDirect(FileDownloadRecord record, File targetFile) {
+//        Log.w(TAG, "FOTA USER-TRIGGERED → BYPASSING ALL BACKGROUND PROTECTIONS");
+//        return downloadFileInternal(record, targetFile, true);
+//    }
+//
+//    private String downloadFileInternal(FileDownloadRecord record, File targetFile, boolean isFotaTrigger) {
+//        try {
+//            long expectedSize = record.fileSize;
+//
+//
+//            // BULLETPROOF RESUME — DISK IS THE SOURCE OF TRUTH
+//            long resumeFrom = 0;
+//
+//            if (record.fileName.startsWith("fota/")) {
+//                File fotaDir = new File("/data/vendor/uv_fota/fota");
+//                File finalFile = new File(fotaDir, "fota.tar");
+//
+//                File partialFile = null;
+//                File[] partialCandidates = fotaDir.listFiles(path ->
+//                        path.isFile() &&
+//                                !path.getName().equals("fota.tar") &&
+//                                path.getName().endsWith(".tar")
+//                );
+//
+//                if (partialCandidates != null && partialCandidates.length > 0) {
+//                    partialFile = partialCandidates[0];
+//                }
+//
+//                if (finalFile.exists() && finalFile.length() > 0) {
+//                    targetFile = finalFile;
+//                    resumeFrom = finalFile.length();
+//                    Log.w(TAG, "FOTA RESUME: Using final renamed file → fota.tar | Resume = " + resumeFrom);
+//                } else if (partialFile != null && partialFile.exists()) {
+//                    targetFile = partialFile;
+//                    resumeFrom = partialFile.length();
+//                    Log.w(TAG, "FOTA RESUME: Using partial file → " + partialFile.getName() +
+//                            " | Resume = " + resumeFrom);
+//                }
+//            }
+//
+//            // Final fallback — always trust the file on disk
+//            if (targetFile.exists()) {
+//                resumeFrom = targetFile.length();
+//            }
+//
+//            // FORCE DB and memory to match reality
+//            if (resumeFrom > record.downloadedBytes || record.downloadedBytes == 0) {
+//                record.downloadedBytes = resumeFrom;
+//                record.fileSize = Math.max(record.fileSize, resumeFrom);
+//                dao.update(record);
+//                Log.w(TAG, "FORCED RESUME SYNC → DB now says " + formatSize(resumeFrom) + " downloaded");
+//            }
+//
+//            Log.i(TAG, String.format("STARTING DOWNLOAD: %s | Resume: %s | Total: %s",
+//                    record.fileName,
+//                    formatSize(record.downloadedBytes),
+//                    expectedSize > 0 ? formatSize(expectedSize) : "unknown"));
+//
+//            Log.d(TAG, "Download attempt #" + (record.retryCount + 1));
+//
+//            String presignedUrl = getPresignedDownloadUrl(record.fileName, isFotaTrigger);
+//            boolean success = downloadFromS3WithResume(presignedUrl, targetFile, expectedSize, record);
+//
+//            if (success) {
+//                long actualSize = targetFile.length();
+//                record.status = "completed";
+//                record.failureReason = null;
+//                record.fileSize = actualSize;
+//                record.downloadedBytes = actualSize;
+//                record.timestamp = System.currentTimeMillis();
+//                dao.update(record);
+//
+//                targetFile.setReadable(true, false);
+//                targetFile.setWritable(true, false);
+//                if (isFotaTrigger) targetFile.setExecutable(true, false);
+//
+//                Log.i(TAG, String.format("DOWNLOAD SUCCESS: %s (%s)", record.fileName, formatSize(actualSize)));
+//                Log.i(TAG, "EXTERNAL SERVICE CAN ACCESS: " + targetFile.getAbsolutePath());
+//
+//                // CRITICAL: Only for FOTA — delete upload record so 15-min service never sees it again
+////                if (isFotaTrigger && record.fileName.startsWith("fota/")) {
+////                    try {
+////                        AppDatabase.getInstance(context).fileUploadDao().deleteByFileName(record.fileName);
+////                        Log.w(TAG, "FOTA CLEANUP → Upload record deleted from DB (no more auto-trigger)");
+////                    } catch (Exception e) {
+////                        Log.w(TAG, "Failed to delete upload record", e);
+////                    }
+////                }
+//
+//                return null;
+//            } else {
+//                String reason = getFailureReason(record.failureReason);
+//                updateRecordFailure(record, reason);
+//                return reason;
+//            }
+//        } catch (Exception e) {
+//            String reason = "UNKNOWN_ERROR: " + e.getMessage();
+//            updateRecordFailure(record, reason);
+//            Log.w(TAG, "DOWNLOAD FAILED: " + e.getMessage());
+//            return reason;
+//        }
+//    }
 
     private String getFailureReason(String rawReason) {
         if (rawReason == null) return "UNKNOWN_ERROR";

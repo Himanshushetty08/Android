@@ -399,13 +399,16 @@ public class DatabaseBackgroundService extends Service {
     }
 
     private void scheduleRepeatingTask() {
-        workerHandler.post(new Runnable() {
+        Log.i(TAG, "UploadManager: Waiting 30 seconds before first upload/download run");
+        workerHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
+                Log.i(TAG, "UploadManager: 30 seconds elapsed, starting upload/download.");
                 performUploadDownload();
+                Log.i(TAG, "UploadManager: Scheduling next run in 15 minutes");
                 workerHandler.postDelayed(this, INTERVAL_MS);
             }
-        });
+        }, 20_000);
     }
 
     private void performUploadDownload() {

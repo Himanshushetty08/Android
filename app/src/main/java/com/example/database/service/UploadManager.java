@@ -229,7 +229,11 @@ private static void collectFilesRecursively(File dir, List<File> out) {
                     continue;
                 }
 
-                File queueFile = new File(queueDir, sourceFile.getName());
+               File queueFile = new File(queueDir, sourceFile.getName());
+//                String newFileName = replaceImeiIfPresent(sourceFile.getName());
+//
+//                File queueFile = new File(queueDir, newFileName);
+
 
                 if (queueFile.exists()) {
                     Log.i(TAG, "Skipping  queueFile.exists" + sourceFile.getName() + " (not supported)");
@@ -400,21 +404,23 @@ private static void collectFilesRecursively(File dir, List<File> out) {
 
             // Upload date (today)
             SimpleDateFormat uploadFmt =
-                    new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+                    new SimpleDateFormat("dd-MM-yyyy", Locale.US);
             String uploadDate = uploadFmt.format(new Date());
 
             String[] parts = filename.split("_");
             int n = parts.length;
 
             // File date & time from filename
-            String year   = parts[n - 6];
-            String month  = parts[n - 5];
-            String day    = parts[n - 4];
-            String hour   = parts[n - 3];
-            String minute = parts[n - 2];
+            // File date & time from filename
+            String year   = parts[n - 7];
+            String month  = parts[n - 6];
+            String day    = parts[n - 5];
+            String hour   = parts[n - 4];
+            String minute = parts[n - 3];
+
 
             return String.format(
-                    "vehicles/vcu_logs_%s/%s/%s-%s-%s/%s-%s/%s",
+                    "vehicles/vcu_logs_%s/%s/%s_%s_%s/%s_%s/%s",
                     imei,
                     uploadDate,
                     year, month, day,
@@ -427,6 +433,33 @@ private static void collectFilesRecursively(File dir, List<File> out) {
             return "vehicles/vcu_logs_" + DeviceSession.getImei()
                     + "/unknown/" + filename;
         }
+    }
+    private static String replaceImeiIfPresent(String fileName) {
+
+        String imei = DeviceSession.getImei();
+
+        if (imei == null || imei.isEmpty()) {
+
+            Log.w("UploadManager", "IMEI not available, skipping rename");
+
+            return fileName;
+
+        }
+
+        if (!fileName.contains("000000000000000")) {
+
+            return fileName; // nothing to replace
+
+        }
+
+        return fileName.replace(
+
+                "000000000000000",
+
+                imei
+
+        );
+
     }
 
 
