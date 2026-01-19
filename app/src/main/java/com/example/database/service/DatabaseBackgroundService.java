@@ -13,6 +13,8 @@ import android.os.Looper;
 import android.os.RemoteException;
 import android.util.Log;
 import android.content.Context;
+
+import com.example.database.service.network.NetworkUploadTrigger;
 import com.ultraviolette.uvmqtt.IMqttFileHandler;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -66,6 +68,9 @@ public class DatabaseBackgroundService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+
+
+
         Log.i(TAG, "DatabaseBackgroundService created");
 
         createNotificationChannel();
@@ -84,6 +89,9 @@ public class DatabaseBackgroundService extends Service {
             @Override
             public void onAvailable(Network network) {
                 Log.w(TAG, "WIFI CONNECTED → INSTANT OTA RESUME CHECKkkkk");
+
+                UploadManager.processFiles(getApplicationContext());
+
                 workerHandler.post(() -> {
                     AppDatabase db = AppDatabase.getInstance(getApplicationContext());
                     FileDownloadDao dao = db.fileDownloadDao();
