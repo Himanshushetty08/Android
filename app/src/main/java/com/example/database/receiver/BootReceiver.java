@@ -37,7 +37,7 @@ public class BootReceiver extends BroadcastReceiver {
                     Log.i(TAG, " BootReceiver: Foreground service started successfully");
                 } else {
                     context.startService(serviceIntent);
-                    Log.i(TAG, " BootReceiver: Background service started successfully");
+                    Log.i(TAG, " BootReceiver: Background service started successfullyy");
                 }
             } catch (Exception e) {
                 Log.e(TAG, "BootReceiver: Failed to start DatabaseBackgroundService", e);
