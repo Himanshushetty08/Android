@@ -34,7 +34,7 @@ public class BootReceiver extends BroadcastReceiver {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(serviceIntent);
-                    Log.i(TAG, " BootReceiver: Foreground service started successfully");
+                    Log.i(TAG, " BootReceiver: Foreground service started successfullyy");
                 } else {
                     context.startService(serviceIntent);
                     Log.i(TAG, " BootReceiver: Background service started successfullyy");
