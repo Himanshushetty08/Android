@@ -34,6 +34,7 @@ public class CloudDownloadManager {
             Log.i(TAG, "WIFI CONNECTED: Proceeding");
 
             try {
+                fetchRegistrationConfig(context);
                 fetchAvailableFiles(context);
                 downloadPendingFiles(context);
                 retryFailedDownloads(context);
@@ -42,6 +43,16 @@ public class CloudDownloadManager {
                 Log.e(TAG, "DOWNLOAD SERVICE ERROR", e);
             }
         });
+    }
+
+    private static void fetchRegistrationConfig(Context context) {
+        try {
+            AppDatabase db = AppDatabase.getInstance(context);
+            FileDownloadDao dao = db.fileDownloadDao();
+            new CloudDownloader(context, dao).fetchRegistrationConfig();
+        } catch (Exception e) {
+            Log.e(TAG, "Error fetching registration config", e);
+        }
     }
 
     private static void fetchAvailableFiles(Context context) {

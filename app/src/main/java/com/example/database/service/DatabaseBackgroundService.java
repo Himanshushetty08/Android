@@ -141,6 +141,7 @@ public class DatabaseBackgroundService extends Service {
 
 
         scheduleRepeatingTask();
+        scheduleBootRegistrationFetch();
 
         // INSTANT OTA RESUME WHEN WIFI COMES BACK (NO 15 MIN WAIT)
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
@@ -520,6 +521,19 @@ public class DatabaseBackgroundService extends Service {
                 }
             }
         }
+    }
+
+    private void scheduleBootRegistrationFetch() {
+        workerHandler.postDelayed(() -> {
+            Log.i(TAG, "BOOT: Fetching registration config...");
+            try {
+                AppDatabase db = AppDatabase.getInstance(getApplicationContext());
+                new CloudDownloader(getApplicationContext(), db.fileDownloadDao())
+                        .fetchRegistrationConfig();
+            } catch (Exception e) {
+                Log.e(TAG, "BOOT: Registration config fetch failed", e);
+            }
+        }, 30_000);
     }
 
     private void scheduleRepeatingTask() {

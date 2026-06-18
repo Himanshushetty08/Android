@@ -9,10 +9,12 @@ import com.example.database.db.FileUploadDao;
 import com.example.database.db.FileUploadRecord;
 import com.example.database.db.FileDownloadDao;
 import com.example.database.db.FileDownloadRecord;
+import com.example.database.utils.DeviceSession;
 
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.RandomAccessFile;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
@@ -26,7 +28,10 @@ import okhttp3.*;
 public class CloudDownloader {
 
     private static final String TAG = "CloudDownloader";
+    private static final String REG_TAG = "RegistrationConfig";
     private static final String LAMBDA_URL = "https://bpfsuu5xvj.execute-api.ap-south-1.amazonaws.com/default/s3uploadurlcreatorv1-dev-getPreSignedURLToPutToS3-dev";
+    private static final String REGISTRATION_URL = "https://vac-apis.ultraviolette.com/dev/get-registration-details";
+    private static final String CONFIG_PATH = "/data/vendor/uv_fota/fota/config.json";
 
     private final Context context;
     private final FileDownloadDao dao;
@@ -547,6 +552,56 @@ public class CloudDownloader {
             return String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0));
         } else {
             return String.format("%.2f MB", bytes / (1024.0 * 1024.0));
+        }
+    }
+
+    public void fetchRegistrationConfig() {
+        String imei = DeviceSession.getImei();
+        if (imei == null || imei.isEmpty()) {
+            Log.w(REG_TAG, "IMEI not set, skipping registration config fetch");
+            return;
+        }
+
+        try {
+            Log.i(REG_TAG, "Fetching registration config for IMEI: " + imei);
+            String jsonBody = "{\"imei\": \"" + imei + "\"}";
+            RequestBody body = RequestBody.create(jsonBody, MediaType.parse("application/json"));
+            Request request = new Request.Builder()
+                    .url(REGISTRATION_URL)
+                    .post(body)
+                    .build();
+
+            try (Response response = httpClient.newCall(request).execute()) {
+                if (!response.isSuccessful() || response.body() == null) {
+                    Log.e(REG_TAG, "Fetch failed: HTTP " + response.code());
+                    return;
+                }
+
+                String responseBody = response.body().string();
+                Log.d(REG_TAG, "Response received, saving to " + CONFIG_PATH);
+
+                File configFile = new File(CONFIG_PATH);
+                File configDir = configFile.getParentFile();
+                if (configDir != null && !configDir.exists()) {
+                    boolean created = configDir.mkdirs();
+                    if (!created) {
+                        Log.e(REG_TAG, "Failed to create config dir: " + configDir.getAbsolutePath() + " (SELinux/permission denied?)");
+                        return;
+                    }
+                    configDir.setReadable(true, false);
+                    configDir.setWritable(true, false);
+                }
+
+                try (FileOutputStream fos = new FileOutputStream(configFile)) {
+                    fos.write(responseBody.getBytes("UTF-8"));
+                    fos.flush();
+                }
+
+                configFile.setReadable(true, false);
+                Log.i(REG_TAG, "config.json saved successfully: " + CONFIG_PATH);
+            }
+        } catch (Exception e) {
+            Log.e(REG_TAG, "Error fetching registration config", e);
         }
     }
 }
