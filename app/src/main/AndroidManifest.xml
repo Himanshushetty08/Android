@@ -6,7 +6,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.READ_DROPBOX_DATA"
+        tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.READ_PRIVILEGED_PHONE_STATE"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -25,6 +31,9 @@
         android:persistent="true"
         android:debuggable="true"
         tools:ignore="HardcodedDebugMode,MissingApplicationIcon">
+
+        <!-- Crash Monitoring Service -->
+
 
         <!-- FOTA Download Service -->
         <service
@@ -99,6 +108,40 @@
                 <action android:name="android.intent.action.PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".receiver.LogCleanupReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.database.ACTION_CLEANUP_LOGS" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".receiver.LogRetentionReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.database.ACTION_RETAIN_LOGS" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".receiver.StorageCleanupReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.database.ACTION_STORAGE_CLEANUP" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".receiver.ManualUploadReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.database.ACTION_MANUAL_UPLOAD" />
+            </intent-filter>
+        </receiver>
+
 
     </application>
 </manifest>

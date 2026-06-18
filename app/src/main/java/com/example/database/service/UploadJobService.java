@@ -105,10 +105,10 @@ public class UploadJobService extends Worker {
     public Result doWork() {
         Log.i("UploadJobService", "UploadJobService: Scheduled upload fired by WorkManager");
 
-        // ✅ EXISTING: Process uploads
+        // EXISTING: Process uploads
         UploadManager.processFiles(getApplicationContext());
 
-        // ✅ ADD: Process downloads
+        // ADD: Process downloads
         CloudDownloadManager.processDownloads(getApplicationContext());
 
         return Result.success();

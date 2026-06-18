@@ -501,10 +501,10 @@ public class CloudDownloader {
                             String progressText;
                             if (realTotalSize > 0) {
                                 double pct = total * 100.0 / realTotalSize;
-                                progressText = String.format("ProgggsssLeeLL: %.1f%% (%s / %s)", pct,
+                                progressText = String.format("ProgggsssLeeLLineww: %.1f%% (%s / %s)", pct,
                                         formatSize(total), formatSize(realTotalSize));
                             } else {
-                                progressText = "ProgreggsssssLLLeeeL: ??% (" + formatSize(total) + " downloaded)";
+                                progressText = "ProgreggsssssLLLeeeLiiiooneww: ??% (" + formatSize(total) + " downloaded)";
                             }
                             Log.d(TAG, progressText);
                             lastLog = System.currentTimeMillis();

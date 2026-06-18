@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -13,6 +14,15 @@ import android.os.Looper;
 import android.os.RemoteException;
 import android.util.Log;
 import android.content.Context;
+import android.os.UserHandle;
+import android.os.UserManager;
+
+import com.example.database.receiver.LogCleanupReceiver;
+import com.example.database.receiver.LogRetentionReceiver;
+import com.example.database.receiver.ManualUploadReceiver;
+import com.example.database.receiver.StorageCleanupReceiver;
+import com.example.database.service.crash.CrashWatcher;
+//import com.example.database.service.crash.CrashUploader;
 
 import com.example.database.service.network.NetworkUploadTrigger;
 import com.ultraviolette.uvmqtt.IMqttFileHandler;
@@ -39,12 +49,24 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
 
+
+import com.ultraviolette.aidl.IFotaUmsCallback;
+import com.ultraviolette.aidl.IFotaUmsEvents;
+
+import com.example.database.utils.DeviceSession;
+
 public class DatabaseBackgroundService extends Service {
 
     private static final String TAG = "DatabaseBackgroundService";
     private Handler mainHandler;
     private HandlerThread workerThread;
     private Handler workerHandler;
+
+    // ADD after existing callbacks list
+    private IFotaUmsCallback umsCallback = null;
+
+    private CrashWatcher dropboxWatcher;
+    //private CrashUploader crashUploader;
 
     private static final int INTERVAL_MINUTES = 15;
     private static final long INTERVAL_MS = INTERVAL_MINUTES * 60 * 1000;
@@ -65,9 +87,19 @@ public class DatabaseBackgroundService extends Service {
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
 
+
+
     @Override
     public void onCreate() {
         super.onCreate();
+        ///
+        UserManager um = (UserManager) getSystemService(Context.USER_SERVICE);
+        if (!um.isSystemUser()) {
+            Log.d(TAG, "Not User 0 — stopping service immediately.");
+            stopSelf();
+            return;
+        }
+        ///
 
 
 
@@ -75,11 +107,38 @@ public class DatabaseBackgroundService extends Service {
 
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, createNotification("Service initializing..."));
+//        startCrashMonitoring();
 
         mainHandler = new Handler(Looper.getMainLooper());
         workerThread = new HandlerThread("DatabaseWorkerThread");
         workerThread.start();
         workerHandler = new Handler(workerThread.getLooper());
+// 80 PERC
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction("com.example.database.ACTION_CLEANUP_LOGS");
+        LogCleanupReceiver logCleanupReceiver = new LogCleanupReceiver();
+        registerReceiver(logCleanupReceiver, intentFilter, RECEIVER_EXPORTED);
+
+
+        //5 LOGS
+        IntentFilter retentionFilter = new IntentFilter();
+        retentionFilter.addAction("com.example.database.ACTION_RETAIN_LOGS");
+        LogRetentionReceiver logRetentionReceiver = new LogRetentionReceiver();
+        registerReceiver(logRetentionReceiver, retentionFilter, RECEIVER_EXPORTED);
+
+        //60 PERC
+
+        IntentFilter storageFilter = new IntentFilter();
+        storageFilter.addAction("com.example.database.ACTION_STORAGE_CLEANUP");
+        StorageCleanupReceiver storageCleanupReceiver = new StorageCleanupReceiver();
+        registerReceiver(storageCleanupReceiver, storageFilter, RECEIVER_EXPORTED);
+
+        //on demand upload
+        IntentFilter manualFilter = new IntentFilter();
+        manualFilter.addAction("com.example.database.ACTION_MANUAL_UPLOAD");
+        ManualUploadReceiver ManualUploadReceiver = new ManualUploadReceiver();
+        registerReceiver(ManualUploadReceiver, manualFilter, RECEIVER_EXPORTED);
+
 
         scheduleRepeatingTask();
 
@@ -89,6 +148,8 @@ public class DatabaseBackgroundService extends Service {
             @Override
             public void onAvailable(Network network) {
                 Log.w(TAG, "WIFI CONNECTED → INSTANT OTA RESUME CHECKkkkk");
+
+
 
                 UploadManager.processFiles(getApplicationContext());
 
@@ -100,6 +161,7 @@ public class DatabaseBackgroundService extends Service {
                     for (FileDownloadRecord r : otaList) {
                         if (!"completed".equals(r.status)) {
                             Log.w(TAG, "AUTO-RESUME DETECTED → USING FULL RENAME FLOW FOR: " + r.fileName);
+                            notifyUmsStateChanged("DOWNLOADING", "", "wifi_resumed", r.fileName);
                             triggerOtaDownloadDirectly(r.fileName);
                             return; // Only process first incomplete FOTA
                         }
@@ -118,6 +180,22 @@ public class DatabaseBackgroundService extends Service {
         }
     }
 
+//    private void startCrashMonitoring() {
+//
+//        Log.i(TAG, "Starting crash monitoring (DropBox)");
+//
+//        crashUploader = new CrashUploader(this);
+//
+//        dropboxWatcher = new CrashWatcher("/data/system/dropbox", path -> {
+//
+//            Log.i(TAG, "Crash detected from DropBox: " + path);
+//
+//            crashUploader.uploadCrash(path, null);
+//
+//        });
+//
+//        dropboxWatcher.startWatching();
+//    }
 
 
     private final IFotaS3Events.Stub binder = new IFotaS3Events.Stub() {
@@ -147,6 +225,28 @@ public class DatabaseBackgroundService extends Service {
                 callbacks.remove(callback);
             }
             Log.d(TAG, "Callback unregistered");
+        }
+    };
+
+
+    private final IFotaUmsEvents.Stub umsEventsBinder = new IFotaUmsEvents.Stub() {
+
+        @Override
+        public void registerUmsCallback(IFotaUmsCallback callback) throws RemoteException {
+            umsCallback = callback;
+            Log.i(TAG, "UMS registered callback.");
+        }
+
+        @Override
+        public void unregisterUmsCallback(IFotaUmsCallback callback) throws RemoteException {
+            umsCallback = null;
+            Log.i(TAG, "UMS unregistered callback.");
+        }
+
+        @Override
+        public String getCurrentState() throws RemoteException {
+            // DM doesn't track state — return READY
+            return "READY";
         }
     };
 
@@ -244,11 +344,15 @@ public class DatabaseBackgroundService extends Service {
         if (fileName == null || fileName.trim().isEmpty()) {
             Log.e(TAG, "triggerOtaDownloadDirectly: Invalid filename");
             notifyOtaAvailable("FAILED");
+
+            notifyUmsStateChanged("ERROR", "", "INVALID_FILENAME",
+                    fileName != null ? fileName : "");;
             return;
         }
 
         Executors.newSingleThreadExecutor().execute(() -> {
             Log.i(TAG, "DIRECT OTA DOWNLOAD STARTED: " + fileName);
+            notifyUmsStateChanged("DOWNLOADING", "", "", fileName);
             updateNotification("Preparing OTA download...");
 
             File downloadDir = new File("/data/vendor/uv_fota/fota");
@@ -307,6 +411,8 @@ public class DatabaseBackgroundService extends Service {
                 if (record == null) {
                     Log.e(TAG, "CRITICAL: Record disappeared from DB!");
                     notifyOtaAvailable("FAILED");
+                    notifyUmsStateChanged("ERROR", "", "RECORD_MISSING_FROM_DB", fileName);
+
                     return;
                 }
 
@@ -360,9 +466,13 @@ public class DatabaseBackgroundService extends Service {
                         updateNotification("OTA downloaded: fota.tar");
                         notifyOtaReady();
                         notifyOtaAvailable("SUCCESS");
+                        notifyUmsStateChanged("DOWNLOADED",                              // ← ADD
+                                "/data/vendor/uv_fota/fota/fota.tar", "", fileName);    // ← ADD
                     } else {
                         Log.e(TAG, "RENAME/COPY SUCCEEDED BUT FILE MISSING!");
                         notifyOtaAvailable("FAILED");
+                        notifyUmsStateChanged("ERROR", "", "FILE_MISSING_AFTER_RENAME", fileName); // ← ADD
+
                     }
                 } else {
                     Log.e(TAG, "RENAME CONDITION FAILED - CHECK LOGS ABOVE");
@@ -370,13 +480,19 @@ public class DatabaseBackgroundService extends Service {
                     Log.w(TAG, "OTA DOWNLOAD FAILED: " + fileName + " | Reason: " + reason);
                     updateNotification("OTA failed: " + realName + " (" + reason + ")");
                     notifyOtaAvailable("FAILED");
+                    notifyUmsStateChanged("ERROR", "", reason, fileName); // ← ADD
+
                 }
 
             } catch (Exception e) {
                 Log.e(TAG, "FATAL: OTA download crashed for " + fileName, e);
                 updateNotification("OTA error: " + e.getMessage());
                 notifyOtaAvailable("FAILED");
+                notifyUmsStateChanged("ERROR", "", e.getMessage(), fileName); // ← ADD
+
             }
+
+
         });
     }
 
@@ -481,10 +597,21 @@ public class DatabaseBackgroundService extends Service {
         }
     }
 
+    //@Override
+//    public int onStartCommand(Intent intent, int flags, int startId) {
+//        Log.i(TAG, "onStartCommand triggered");
+//        updateNotification("Running periodic tasks...");
+//        return START_STICKY;
+//    }
+
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+
         Log.i(TAG, "onStartCommand triggered");
+
         updateNotification("Running periodic tasks...");
+
         return START_STICKY;
     }
 
@@ -504,6 +631,42 @@ public class DatabaseBackgroundService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         Log.i(TAG, "AIDlllTTluu client binding to DatabaseBackgroundService");
+
+        Log.i(TAG, "Client binding. Action: "
+                + (intent != null ? intent.getAction() : "null"));
+
+        if (intent != null
+                && "com.ultraviolette.uvfotaservice.BIND_DM".equals(intent.getAction())) {
+            // UmsService is binding — return IFotaUmsEvents binder
+            Log.i(TAG, "UmsService binding → returning IFotaUmsEvents binder.");
+            return umsEventsBinder;
+        }
+
         return binder;
+    }
+
+    private void notifyUmsStateChanged(String state, String filePath,
+                                       String reason, String campaignId) {
+        if (umsCallback == null) {
+            Log.w(TAG, "notifyUmsStateChanged: UMS callback null. state=" + state);
+            return;
+        }
+        try {
+            umsCallback.onStateChanged(state, filePath, reason, campaignId);
+            Log.i(TAG, "Notified UMS → " + state);
+        } catch (RemoteException e) {
+            Log.e(TAG, "Failed to notify UMS: " + e.getMessage());
+            umsCallback = null;
+        }
+    }
+
+    private void notifyUmsProgress(String campaignId, int percent,
+                                   long downloaded, long total) {
+        if (umsCallback == null) return;
+        try {
+            umsCallback.onProgress(campaignId, percent, downloaded, total);
+        } catch (RemoteException e) {
+            umsCallback = null;
+        }
     }
 }

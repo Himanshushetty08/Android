@@ -11,6 +11,8 @@ public interface FileUploadDao {
 
     @Update
     void update(FileUploadRecord record);
+    @Delete
+    void delete(FileUploadRecord record);
 
     @Query("SELECT * FROM FileUploadRecord WHERE fileName = :fileName LIMIT 1")
     FileUploadRecord getRecordByFileName(String fileName);
