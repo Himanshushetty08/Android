@@ -33,7 +33,7 @@ import java.util.ArrayList;
 public class UploadManager {
 
     private static final String TAG = "UploadManager";
-    private static final String LOGS_SOURCE_DIR = "/data/vendor/logmaster/udp_logs";
+    private static final String LOGS_SOURCE_DIR = "/data/vendor/udp_logs";
 
     private static final String THOMB_LOGS_DIR = "/data/vendor/logmaster/thomb_logs";
 
