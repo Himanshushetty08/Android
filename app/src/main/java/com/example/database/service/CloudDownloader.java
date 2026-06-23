@@ -31,7 +31,7 @@ public class CloudDownloader {
     private static final String REG_TAG = "RegistrationConfig";
     private static final String LAMBDA_URL = "https://bpfsuu5xvj.execute-api.ap-south-1.amazonaws.com/default/s3uploadurlcreatorv1-dev-getPreSignedURLToPutToS3-dev";
     private static final String REGISTRATION_URL = "https://vac-apis.ultraviolette.com/dev/get-registration-details";
-    private static final String CONFIG_PATH = "/data/vendor/uv_fota/fota/config.json";
+    private static final String CONFIG_PATH = "/data/vendor/uv/config/config.json";
 
     private final Context context;
     private final FileDownloadDao dao;
