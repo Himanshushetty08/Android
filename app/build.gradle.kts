@@ -34,7 +34,7 @@ android {
     applicationVariants.all {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output.outputFileName = "s3service-${buildType.name}.apk"
+            output.outputFileName = "S3service.apk"
         }
     }
 

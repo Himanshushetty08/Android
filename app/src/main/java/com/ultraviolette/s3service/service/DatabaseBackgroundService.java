@@ -86,6 +86,7 @@ public class DatabaseBackgroundService extends Service {
     // INSTANT RESUME ON WIFI RETURN
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
+    private volatile boolean bootConfigFetched = false;
 
 
 
@@ -157,6 +158,14 @@ public class DatabaseBackgroundService extends Service {
                 workerHandler.post(() -> {
                     AppDatabase db = AppDatabase.getInstance(getApplicationContext());
                     FileDownloadDao dao = db.fileDownloadDao();
+
+                    if (!bootConfigFetched) {
+                        Log.i(TAG, "WIFI CONNECTED → Boot config not yet fetched, retrying");
+                        boolean success = new CloudDownloader(getApplicationContext(), dao)
+                                .fetchRegistrationConfig();
+                        if (success) bootConfigFetched = true;
+                    }
+
                     List<FileDownloadRecord> otaList = dao.getRecordsByPrefix("fota/");
 
                     for (FileDownloadRecord r : otaList) {
@@ -528,8 +537,13 @@ public class DatabaseBackgroundService extends Service {
             Log.i(TAG, "BOOT: Fetching registration config...");
             try {
                 AppDatabase db = AppDatabase.getInstance(getApplicationContext());
-                new CloudDownloader(getApplicationContext(), db.fileDownloadDao())
+                boolean success = new CloudDownloader(getApplicationContext(), db.fileDownloadDao())
                         .fetchRegistrationConfig();
+                if (success) {
+                    bootConfigFetched = true;
+                } else {
+                    Log.w(TAG, "BOOT: Config fetch failed, will retry on network reconnect");
+                }
             } catch (Exception e) {
                 Log.e(TAG, "BOOT: Registration config fetch failed", e);
             }

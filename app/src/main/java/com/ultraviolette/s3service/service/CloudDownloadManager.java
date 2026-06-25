@@ -34,7 +34,6 @@ public class CloudDownloadManager {
             Log.i(TAG, "WIFI CONNECTED: Proceeding");
 
             try {
-                fetchRegistrationConfig(context);
                 fetchAvailableFiles(context);
                 downloadPendingFiles(context);
                 retryFailedDownloads(context);

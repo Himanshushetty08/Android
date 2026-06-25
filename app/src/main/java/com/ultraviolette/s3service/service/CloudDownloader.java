@@ -555,11 +555,11 @@ public class CloudDownloader {
         }
     }
 
-    public void fetchRegistrationConfig() {
+    public boolean fetchRegistrationConfig() {
         String imei = DeviceSession.getImei();
         if (imei == null || imei.isEmpty()) {
             Log.w(REG_TAG, "IMEI not set, skipping registration config fetch");
-            return;
+            return false;
         }
 
         try {
@@ -574,7 +574,7 @@ public class CloudDownloader {
             try (Response response = httpClient.newCall(request).execute()) {
                 if (!response.isSuccessful() || response.body() == null) {
                     Log.e(REG_TAG, "Fetch failed: HTTP " + response.code());
-                    return;
+                    return false;
                 }
 
                 String responseBody = response.body().string();
@@ -586,7 +586,7 @@ public class CloudDownloader {
                     boolean created = configDir.mkdirs();
                     if (!created) {
                         Log.e(REG_TAG, "Failed to create config dir: " + configDir.getAbsolutePath() + " (SELinux/permission denied?)");
-                        return;
+                        return false;
                     }
                     configDir.setReadable(true, false);
                     configDir.setWritable(true, false);
@@ -599,9 +599,11 @@ public class CloudDownloader {
 
                 configFile.setReadable(true, false);
                 Log.i(REG_TAG, "config.json saved successfully: " + CONFIG_PATH);
+                return true;
             }
         } catch (Exception e) {
             Log.e(REG_TAG, "Error fetching registration config", e);
+            return false;
         }
     }
 }
