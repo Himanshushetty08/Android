@@ -34,6 +34,8 @@ interface IFotaUmsEvents {
      * @param callback  IFotaUmsCallback implementation in DM
      */
     void registerUmsCallback(IFotaUmsCallback callback);
+        void fotaDownloadRequest(String fileName);
+
 
     /**
      * DatabaseBackgroundService calls this on shutdown.

@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+FATAL_latest.txt
+*.txt

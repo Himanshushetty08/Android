@@ -151,8 +151,6 @@ public class DatabaseBackgroundService extends Service {
             public void onAvailable(Network network) {
                 Log.w(TAG, "WIFI CONNECTED → INSTANT OTA RESUME CHECKkkkk");
 
-
-
                 UploadManager.processFiles(getApplicationContext());
 
                 workerHandler.post(() -> {
@@ -255,8 +253,14 @@ public class DatabaseBackgroundService extends Service {
 
         @Override
         public String getCurrentState() throws RemoteException {
-            // DM doesn't track state — return READY
             return "READY";
+        }
+
+        @Override
+        public void fotaDownloadRequest(String fileName) throws RemoteException {
+            Log.i(TAG, "UMS → fotaDownloadRequest received: " + fileName);
+            String s3FileName = fileName.startsWith("fota/") ? fileName : "fota/" + fileName;
+            triggerOtaDownloadDirectly(s3FileName);
         }
     };
 
@@ -634,12 +638,13 @@ public class DatabaseBackgroundService extends Service {
 
 
     @Override
+
     public int onStartCommand(Intent intent, int flags, int startId) {
+        UserManager um = (UserManager) getSystemService(Context.USER_SERVICE);
+        if (!um.isSystemUser()) return START_NOT_STICKY;  // ← ADD THIS
 
         Log.i(TAG, "onStartCommand triggered");
-
         updateNotification("Running periodic tasks...");
-
         return START_STICKY;
     }
 
@@ -658,7 +663,7 @@ public class DatabaseBackgroundService extends Service {
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
-        Log.i(TAG, "AIDlllTTluu client binding to DatabaseBackgroundService");
+        Log.i(TAG, "AIDlllTTluuiii client binding to DatabaseBackgroundService");
 
         Log.i(TAG, "Client binding. Action: "
                 + (intent != null ? intent.getAction() : "null"));
@@ -670,6 +675,8 @@ public class DatabaseBackgroundService extends Service {
             return umsEventsBinder;
         }
 
+        Log.i(TAG, "Other client binding → BOUND = FALSE for UMS. Action: "
+                + (intent != null ? intent.getAction() : "null"));
         return binder;
     }
 
