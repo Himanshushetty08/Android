@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.database"  // Use your actual package namespace here
+    namespace = "com.ultraviolette.s3service"  // Use your actual package namespace here
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.database"  // Change to your app ID
+        applicationId = "com.ultraviolette.s3service"  // Change to your app ID
         minSdk = 26
         targetSdk = 36
         versionCode = 1
@@ -29,6 +29,13 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    applicationVariants.all {
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output.outputFileName = "S3service.apk"
+        }
     }
 
     buildFeatures {

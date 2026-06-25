@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "database"
+rootProject.name = "s3service"
 include(":app")
  
