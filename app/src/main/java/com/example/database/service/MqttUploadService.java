@@ -11,6 +11,7 @@ import androidx.annotation.Nullable;
 import com.example.database.utils.DeviceSession;
 
 
+import com.example.database.utils.PersistentImeiStore;
 import com.ultraviolette.uvmqtt.IMqttFileHandler;
 
 public class MqttUploadService extends Service {
@@ -39,6 +40,7 @@ public class MqttUploadService extends Service {
             Log.w(TAG, "MQTT COMMAND RECEIVED → imei(\"" + imei + "\")");
 
             DeviceSession.setImei(imei);
+            PersistentImeiStore.save(imei);
 
 
     }
