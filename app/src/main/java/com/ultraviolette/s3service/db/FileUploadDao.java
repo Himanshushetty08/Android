@@ -38,4 +38,9 @@ public interface FileUploadDao {
     // ✅ ADD THIS METHOD
     @Query("SELECT * FROM FileUploadRecord WHERE status = 'success'")
     List<FileUploadRecord> getSuccessfulRecords();
+
+    @Query("UPDATE FileUploadRecord SET status = :status, failureReason = :reason, timestamp = :ts WHERE fileName = :fileName")
+    void updateStatusByFileName(String fileName, String status, String reason, long ts);
+
+
 }

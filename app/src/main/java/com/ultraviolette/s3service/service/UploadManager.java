@@ -1,5 +1,6 @@
 package com.ultraviolette.s3service.service;
 import com.ultraviolette.s3service.utils.DeviceSession;
+import com.ultraviolette.s3service.utils.PersistentImeiStore;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -36,7 +37,7 @@ public class UploadManager {
     private static final String DEBUG_LOGS_DIR = "/data/vendor/logmaster/debug_logs";
     private static final String ANR_LOGS_DIR = "/data/vendor/logmaster/anr_logs";
 
-   // private static final String QUEUE_DIR = "upload_queue";
+    // private static final String QUEUE_DIR = "upload_queue";
 
     //private static final String LAMBDA_URL = "https://bpfsuu5xvj.execute-api.ap-south-1.amazonaws.com/default/s3uploadurlcreatorv1-dev-getPreSignedURLToPutToS3-dev";
 
@@ -242,110 +243,110 @@ public class UploadManager {
 
 
 
-                           /// VENDOR
-private static void uploadDirectlyFromSource(Context context) {
+    /// VENDOR
+    private static void uploadDirectlyFromSource(Context context) {
 
-    File logsSourceDir = new File(LOGS_SOURCE_DIR);
+        File logsSourceDir = new File(LOGS_SOURCE_DIR);
 
-    // 🔍 Check directory existence
-    Log.d(TAG, "VCU Log Source Directory Path: " + logsSourceDir.getAbsolutePath());
+        // 🔍 Check directory existence
+        Log.d(TAG, "VCU Log Source Directory Path: " + logsSourceDir.getAbsolutePath());
 
-    if (!logsSourceDir.exists()) {
-        Log.e(TAG, "Source directory DOES NOT exist ");
-        return;
-    }
-
-    if (!logsSourceDir.isDirectory()) {
-        Log.e(TAG, "Source path is NOT a directory ");
-        return;
-    }
-
-    if (!logsSourceDir.canRead()) {
-        Log.e(TAG, "Directory exists but NOT readable  Permission issue");
-        return;
-    }
-
-    Log.d(TAG, "Directory accessible ");
-
-    File[] filesCheck = logsSourceDir.listFiles();
-
-    if (filesCheck == null) {
-        Log.e(TAG, "listFiles() returned NULL → Possible permission issue ");
-        return;
-    }
-
-    Log.d(TAG, "Total files found in source directory: " + filesCheck.length);
-
-    List<File> sourceFiles = new ArrayList<>();
-
-    collectFilesRecursively(logsSourceDir, sourceFiles);
-
-    Log.d(TAG, "Total files after recursive scan: " + sourceFiles.size());
-
-    sourceFiles.sort((f1, f2) ->
-            Integer.compare(extractBootCounter(f2.getName()), extractBootCounter(f1.getName()))
-    );
-
-    if (sourceFiles.isEmpty()) {
-        Log.d(TAG, "No VCU logs found in directory ");
-        return;
-    }
-
-    String activeSession = getActiveSessionId();
-
-    Log.d(TAG, "Active Session ID: " + activeSession);
-
-    AppDatabase db = AppDatabase.getInstance(context);
-    FileUploadDao dao = db.fileUploadDao();
-
-    for (File file : sourceFiles) {
-
-        Log.d(TAG, "Processing file: " + file.getAbsolutePath());
-
-        if ("boot_counter.txt".equals(file.getName())) {
-            Log.d(TAG, "Skipping boot_counter.txt");
-            continue;
+        if (!logsSourceDir.exists()) {
+            Log.e(TAG, "Source directory DOES NOT exist ");
+            return;
         }
 
-        String name = file.getName().toLowerCase();
-
-        if (!(name.endsWith(".bin") || name.endsWith(".gz") || name.endsWith(".txt"))) {
-            Log.d(TAG, "Skipping unsupported file: " + file.getName());
-            continue;
+        if (!logsSourceDir.isDirectory()) {
+            Log.e(TAG, "Source path is NOT a directory ");
+            return;
         }
 
-        if (!file.exists()) {
-            Log.e(TAG, "File does NOT exist: " + file.getName());
-            continue;
+        if (!logsSourceDir.canRead()) {
+            Log.e(TAG, "Directory exists but NOT readable  Permission issue");
+            return;
         }
 
-        if (!file.canRead()) {
-            Log.e(TAG, "File NOT readable (permission issue): " + file.getName());
-            continue;
+        Log.d(TAG, "Directory accessible ");
+
+        File[] filesCheck = logsSourceDir.listFiles();
+
+        if (filesCheck == null) {
+            Log.e(TAG, "listFiles() returned NULL → Possible permission issue ");
+            return;
         }
 
-        if (file.length() == 0) {
-            Log.d(TAG, "Skipping empty file: " + file.getName());
-            continue;
+        Log.d(TAG, "Total files found in source directory: " + filesCheck.length);
+
+        List<File> sourceFiles = new ArrayList<>();
+
+        collectFilesRecursively(logsSourceDir, sourceFiles);
+
+        Log.d(TAG, "Total files after recursive scan: " + sourceFiles.size());
+
+        sourceFiles.sort((f1, f2) ->
+                Integer.compare(extractBootCounter(f2.getName()), extractBootCounter(f1.getName()))
+        );
+
+        if (sourceFiles.isEmpty()) {
+            Log.d(TAG, "No VCU logs found in directory ");
+            return;
         }
 
-        String fileSession = extractSessionId(file.getName());
+        String activeSession = getActiveSessionId();
 
-        if (activeSession != null && activeSession.equals(fileSession)) {
-            Log.d(TAG, "Skipping ACTIVE session file: " + file.getName());
-            continue;
-        }
+        Log.d(TAG, "Active Session ID: " + activeSession);
 
-        int fileCounter = extractBootCounter(file.getName());
+        AppDatabase db = AppDatabase.getInstance(context);
+        FileUploadDao dao = db.fileUploadDao();
 
-        Log.d(TAG,
-                "VALID FILE FOUND  -> " +
-                        "Name=" + file.getName() +
-                        " | Session=" + fileSession +
-                        " | BootCounter=" + fileCounter);
+        for (File file : sourceFiles) {
+
+            Log.d(TAG, "Processing file: " + file.getAbsolutePath());
+
+            if ("boot_counter.txt".equals(file.getName())) {
+                Log.d(TAG, "Skipping boot_counter.txt");
+                continue;
+            }
+
+            String name = file.getName().toLowerCase();
+
+            if (!(name.endsWith(".bin") || name.endsWith(".gz") || name.endsWith(".txt"))) {
+                Log.d(TAG, "Skipping unsupported file: " + file.getName());
+                continue;
+            }
+
+            if (!file.exists()) {
+                Log.e(TAG, "File does NOT exist: " + file.getName());
+                continue;
+            }
+
+            if (!file.canRead()) {
+                Log.e(TAG, "File NOT readable (permission issue): " + file.getName());
+                continue;
+            }
+
+            if (file.length() == 0) {
+                Log.d(TAG, "Skipping empty file: " + file.getName());
+                continue;
+            }
+
+            String fileSession = extractSessionId(file.getName());
+
+            if (activeSession != null && activeSession.equals(fileSession)) {
+                Log.d(TAG, "Skipping ACTIVE session file: " + file.getName());
+                continue;
+            }
+
+            int fileCounter = extractBootCounter(file.getName());
+
+            Log.d(TAG,
+                    "VALID FILE FOUND  -> " +
+                            "Name=" + file.getName() +
+                            " | Session=" + fileSession +
+                            " | BootCounter=" + fileCounter);
 
 
-        // Continue upload logic here
+            // Continue upload logic here
 
 
 
@@ -361,13 +362,15 @@ private static void uploadDirectlyFromSource(Context context) {
                         null,
                         System.currentTimeMillis()
                 );
-                dao.insert(record);
+                // FIX: capture the auto-generated id so later update() matches the row
+                record.id = (int) dao.insert(record);
             }
 
             if ("success".equals(record.status)) {
                 Log.d(TAG, "SKIPPING (already uploaded): " + file.getName());
                 continue;
             }
+
             Log.d(TAG, "UPLOAD ORDERRRrEIuYnew → " + file.getName() +
                     " | counter=" + extractBootCounter(file.getName()));
 
@@ -376,7 +379,7 @@ private static void uploadDirectlyFromSource(Context context) {
 
 
 
-}
+        }
     }
 
 
@@ -475,7 +478,8 @@ private static void uploadDirectlyFromSource(Context context) {
                         System.currentTimeMillis()
                 );
 
-                dao.insert(record);
+                // FIX: capture the auto-generated id
+                record.id = (int) dao.insert(record);
             }
 
             if ("success".equals(record.status)) continue;
@@ -494,8 +498,7 @@ private static void uploadDirectlyFromSource(Context context) {
 
         try {
 
-            String imei = DeviceSession.getImei();
-            if (imei == null || imei.isEmpty()) imei = "unknown";
+            String imei = resolveImei();
 
             SimpleDateFormat outerFmt = new SimpleDateFormat("dd-MM-yyyy", Locale.US);
             String outerDate = outerFmt.format(new Date());
@@ -515,8 +518,8 @@ private static void uploadDirectlyFromSource(Context context) {
             boolean success = uploadToS3(file, presignedUrl, file.length());
 
             if (success) {
-                record.status = "success";
-                record.failureReason = null;
+                // FIX: update by fileName so a stale/zero id can't silently no-op
+                dao.updateStatusByFileName(file.getName(), "success", null, System.currentTimeMillis());
 
                 // DELETE DROPBOX FILE FROM UDP_LOGS AFTER SUCCESSFUL UPLOAD
                 if ("dropbox".equals(categoryFolder)) {
@@ -528,12 +531,8 @@ private static void uploadDirectlyFromSource(Context context) {
 
                 }
             } else {
-                record.status = "failed";
-                record.failureReason = "S3 upload failed";
+                dao.updateStatusByFileName(file.getName(), "failed", "S3 upload failed", System.currentTimeMillis());
             }
-
-            record.timestamp = System.currentTimeMillis();
-            dao.update(record);
 
         } catch (Exception e) {
             updateRecordFailure(record, dao, e.getMessage());
@@ -646,10 +645,8 @@ private static void uploadDirectlyFromSource(Context context) {
         if (!file.exists() || file.length() == 0) {
             Log.w(TAG, "Skipping empty file permanently: " + file.getName());
 
-            record.status = "success"; // or "ignored"
-            record.failureReason = "empty file skipped";
-            record.timestamp = System.currentTimeMillis();
-            dao.update(record);
+            // FIX: update by fileName
+            dao.updateStatusByFileName(file.getName(), "success", "empty file skipped", System.currentTimeMillis());
 
             return;
         }
@@ -663,10 +660,8 @@ private static void uploadDirectlyFromSource(Context context) {
             boolean success = uploadToS3(file, presignedUrl, fileSize);
 
             if (success) {
-                record.status = "success";
-                record.failureReason = null;
-                record.timestamp = System.currentTimeMillis();
-                dao.update(record);
+                // FIX: update by fileName so a stale/zero id can't silently no-op
+                dao.updateStatusByFileName(file.getName(), "success", null, System.currentTimeMillis());
                 Log.i(TAG, "Upload SUCCESSsssssEEEnew: " + file.getName());
             } else {
                 updateRecordFailure(record, dao, "S3 upload failed");
@@ -680,8 +675,7 @@ private static void uploadDirectlyFromSource(Context context) {
 
     private static String buildS3PathFromFilename(String filename) {
         try {
-            String imei = DeviceSession.getImei();
-            if (imei == null || imei.isEmpty()) imei = "unknown";
+            String imei = resolveImei();
 
             SimpleDateFormat uploadFmt = new SimpleDateFormat("dd-MM-yyyy", Locale.US);
             String uploadDate = uploadFmt.format(new Date());
@@ -755,7 +749,7 @@ private static void uploadDirectlyFromSource(Context context) {
 
         } catch (Exception e) {
             Log.w(TAG, "Failed to parse filename: " + filename, e);
-            return "android_hv/vcu_logs_" + DeviceSession.getImei()
+            return "android_hv/vcu_logs_" + resolveImei()
                     + "/unknown/" + filename;
         }
     }
@@ -841,10 +835,29 @@ private static void uploadDirectlyFromSource(Context context) {
 
 
     private static void updateRecordFailure(FileUploadRecord record, FileUploadDao dao, String reason) {
-        record.status = "failed";
-        record.failureReason = reason;
-        record.timestamp = System.currentTimeMillis();
-        dao.update(record);
+        // FIX: update by fileName so a stale/zero id can't silently no-op
+        dao.updateStatusByFileName(record.fileName, "failed", reason, System.currentTimeMillis());
+    }
+
+    // Resolve IMEI robustly: try DeviceSession first, then fall back to the
+    // persistent system property (persist.device.imei), which survives reboots
+    // and is available even when DeviceSession hasn't been populated yet.
+    // Prevents files landing in the "vcu_logs_unknown" folder.
+    private static String resolveImei() {
+        String imei = null;
+        try {
+            imei = DeviceSession.getImei();
+        } catch (Exception e) {
+            Log.w(TAG, "DeviceSession.getImei() threw, falling back to persistent store", e);
+        }
+        if (imei == null || imei.isEmpty()) {
+            imei = PersistentImeiStore.load();
+            Log.i(TAG, "IMEI from persistent store: " + imei);
+        }
+        if (imei == null || imei.isEmpty()) {
+            imei = "unknown";
+        }
+        return imei;
     }
 
     private static String determineCategory(String fileName) {
@@ -1020,7 +1033,8 @@ private static void uploadDirectlyFromSource(Context context) {
                         null,
                         System.currentTimeMillis()
                 );
-                dao.insert(record);
+                // FIX: capture the auto-generated id
+                record.id = (int) dao.insert(record);
                 Log.i(TAG, "Created new DB record with srNo: " + next);
             } else {
                 Log.i(TAG, "Found existing DB record - Status: " + record.status);
@@ -1074,7 +1088,7 @@ private static void uploadDirectlyFromSource(Context context) {
         Log.i(TAG, "======================================");
     }
 
-//    private static int extractRideLogNumber(String filename) {
+    //    private static int extractRideLogNumber(String filename) {
 //        try {
 //            // ride_log.txt.5 -> extract "5"
 //            String[] parts = filename.split("\\.");
@@ -1091,13 +1105,8 @@ private static void uploadDirectlyFromSource(Context context) {
                                               FileUploadRecord record,
                                               FileUploadDao dao) {
         try {
-            String imei = DeviceSession.getImei();
-            if (imei == null || imei.isEmpty()) {
-                Log.w(TAG, "IMEI is null or empty - using 'unknown'");
-                imei = "unknown";
-            } else {
-                Log.d(TAG, "IMEI: " + imei);
-            }
+            String imei = resolveImei();
+            Log.d(TAG, "IMEI: " + imei);
 
             SimpleDateFormat outerFmt = new SimpleDateFormat("dd-MM-yyyy", Locale.US);
             String outerDate = outerFmt.format(new Date());
@@ -1125,18 +1134,13 @@ private static void uploadDirectlyFromSource(Context context) {
 
             if (success) {
                 Log.i(TAG, "S3 upload completed successfully");
-                record.status = "success";
-                record.failureReason = null;
-                record.timestamp = System.currentTimeMillis();
-                dao.update(record);
+                // FIX: update by fileName so a stale/zero id can't silently no-op
+                dao.updateStatusByFileName(file.getName(), "success", null, System.currentTimeMillis());
                 Log.i(TAG, " Database record updated to 'success'");
                 return true;
             } else {
                 Log.e(TAG, " S3 upload failed");
-                record.status = "failed";
-                record.failureReason = "S3 upload failed";
-                record.timestamp = System.currentTimeMillis();
-                dao.update(record);
+                dao.updateStatusByFileName(file.getName(), "failed", "S3 upload failed", System.currentTimeMillis());
                 Log.e(TAG, " Database record updated to 'failed'");
                 return false;
             }
@@ -1226,7 +1230,8 @@ private static void uploadDirectlyFromSource(Context context) {
                         null,
                         System.currentTimeMillis()
                 );
-                dao.insert(record);
+                // FIX: capture the auto-generated id
+                record.id = (int) dao.insert(record);
                 Log.i(TAG, "Created new DB record for debug log");
             }
 
@@ -1280,10 +1285,7 @@ private static void uploadDirectlyFromSource(Context context) {
                                               FileUploadRecord record,
                                               FileUploadDao dao) {
         try {
-            String imei = DeviceSession.getImei();
-            if (imei == null || imei.isEmpty()) {
-                imei = "unknown";
-            }
+            String imei = resolveImei();
 
             SimpleDateFormat outerFmt = new SimpleDateFormat("dd-MM-yyyy", Locale.US);
             String outerDate = outerFmt.format(new Date());
@@ -1306,16 +1308,11 @@ private static void uploadDirectlyFromSource(Context context) {
             boolean success = uploadToS3(file, presignedUrl, file.length());
 
             if (success) {
-                record.status = "success";
-                record.failureReason = null;
-                record.timestamp = System.currentTimeMillis();
-                dao.update(record);
+                // FIX: update by fileName so a stale/zero id can't silently no-op
+                dao.updateStatusByFileName(file.getName(), "success", null, System.currentTimeMillis());
                 return true;
             } else {
-                record.status = "failed";
-                record.failureReason = "S3 upload failed";
-                record.timestamp = System.currentTimeMillis();
-                dao.update(record);
+                dao.updateStatusByFileName(file.getName(), "failed", "S3 upload failed", System.currentTimeMillis());
                 return false;
             }
 
@@ -1402,7 +1399,8 @@ private static void uploadDirectlyFromSource(Context context) {
                         null,
                         System.currentTimeMillis()
                 );
-                dao.insert(record);
+                // FIX: capture the auto-generated id
+                record.id = (int) dao.insert(record);
                 Log.i(TAG, "Created new DB record for ANR log");
             }
 
@@ -1456,10 +1454,7 @@ private static void uploadDirectlyFromSource(Context context) {
                                             FileUploadRecord record,
                                             FileUploadDao dao) {
         try {
-            String imei = DeviceSession.getImei();
-            if (imei == null || imei.isEmpty()) {
-                imei = "unknown";
-            }
+            String imei = resolveImei();
 
             SimpleDateFormat outerFmt = new SimpleDateFormat("dd-MM-yyyy", Locale.US);
             String outerDate = outerFmt.format(new Date());
@@ -1482,16 +1477,11 @@ private static void uploadDirectlyFromSource(Context context) {
             boolean success = uploadToS3(file, presignedUrl, file.length());
 
             if (success) {
-                record.status = "success";
-                record.failureReason = null;
-                record.timestamp = System.currentTimeMillis();
-                dao.update(record);
+                // FIX: update by fileName so a stale/zero id can't silently no-op
+                dao.updateStatusByFileName(file.getName(), "success", null, System.currentTimeMillis());
                 return true;
             } else {
-                record.status = "failed";
-                record.failureReason = "S3 upload failed";
-                record.timestamp = System.currentTimeMillis();
-                dao.update(record);
+                dao.updateStatusByFileName(file.getName(), "failed", "S3 upload failed", System.currentTimeMillis());
                 return false;
             }
 
@@ -1503,5 +1493,3 @@ private static void uploadDirectlyFromSource(Context context) {
     }
 
 }
-
-
