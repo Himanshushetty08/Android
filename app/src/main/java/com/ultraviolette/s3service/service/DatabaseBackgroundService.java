@@ -164,14 +164,48 @@ public class DatabaseBackgroundService extends Service {
                         if (success) bootConfigFetched = true;
                     }
 
+//                    List<FileDownloadRecord> otaList = dao.getRecordsByPrefix("fota/");
+//
+//                    for (FileDownloadRecord r : otaList) {
+//                        if (!"completed".equals(r.status)) {
+//                            Log.w(TAG, "AUTO-RESUME DETECTED → USING FULL RENAME FLOW FOR: " + r.fileName);
+//                            notifyUmsStateChanged("DOWNLOADING", "", "wifi_resumed", r.fileName);
+//                            triggerOtaDownloadDirectly(r.fileName);
+//                            return; // Only process first incomplete FOTA
+//                        }
+//                    }
+
                     List<FileDownloadRecord> otaList = dao.getRecordsByPrefix("fota/");
 
                     for (FileDownloadRecord r : otaList) {
-                        if (!"completed".equals(r.status)) {
-                            Log.w(TAG, "AUTO-RESUME DETECTED → USING FULL RENAME FLOW FOR: " + r.fileName);
+                        // Only AUTO-resume a download that was genuinely interrupted
+                        // mid-transfer. Do NOT auto-fire:
+                        //   - completed downloads (nothing to do)
+                        //   - failed downloads (zombie records like a bad/old
+                        //     campaign that will never succeed — these must wait
+                        //     for an explicit user/MQTT trigger, never auto-retry)
+                        // A real interrupted download has status "downloading"/
+                        // "pending" AND partial bytes already on disk.
+                        boolean interrupted =
+                                !"completed".equals(r.status)
+                                        && !"failed".equals(r.status);
+
+                        // Confirm partial bytes actually exist on disk before resuming.
+                        File fotaDir = new File("/data/vendor/uv_fota/fota");
+                        File partial = new File(fotaDir, extractFileName(r.fileName));
+                        boolean hasPartial = partial.exists() && partial.length() > 0;
+
+                        if (interrupted && hasPartial) {
+                            Log.w(TAG, "AUTO-RESUME: genuinely interrupted download → "
+                                    + r.fileName + " (" + partial.length() + " bytes on disk)");
                             notifyUmsStateChanged("DOWNLOADING", "", "wifi_resumed", r.fileName);
                             triggerOtaDownloadDirectly(r.fileName);
-                            return; // Only process first incomplete FOTA
+                            return; // Only process first genuinely-interrupted FOTA
+                        } else {
+                            Log.i(TAG, "Skipping auto-resume for " + r.fileName
+                                    + " (status=" + r.status
+                                    + " hasPartial=" + hasPartial
+                                    + ") — waiting for explicit trigger.");
                         }
                     }
                 });
