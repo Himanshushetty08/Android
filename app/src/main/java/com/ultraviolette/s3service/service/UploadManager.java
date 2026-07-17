@@ -32,10 +32,10 @@ public class UploadManager {
     private static final String TAG = "UploadManager";
     private static final String LOGS_SOURCE_DIR = "/data/vendor/udp_logs";
 
-    private static final String THOMB_LOGS_DIR = "/data/vendor/logmaster/thomb_logs";
+    private static final String THOMB_LOGS_DIR = "/data/system/thomb_logs";
 
-    private static final String DEBUG_LOGS_DIR = "/data/vendor/logmaster/debug_logs";
-    private static final String ANR_LOGS_DIR = "/data/vendor/logmaster/anr_logs";
+    private static final String DEBUG_LOGS_DIR = "/data/system/debug_logs";
+    private static final String ANR_LOGS_DIR = "/data/system/anr_logs";
 
     // private static final String QUEUE_DIR = "upload_queue";
 
