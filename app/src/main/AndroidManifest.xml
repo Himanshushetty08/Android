@@ -54,6 +54,17 @@
             </intent-filter>
         </service>
 
+        <!-- Document download service: receives presigned URLs from ClusterDataBus (cmd 11 / cmd 17)
+             and stores vehicle documents under /data/vendor/uv/documents/ -->
+        <service
+            android:name=".service.S3DocumentService"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.ultraviolette.s3service.IS3Service" />
+            </intent-filter>
+        </service>
+
         <!-- Other services -->
         <service
             android:name=".service.UploadJobService"
