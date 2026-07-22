@@ -132,10 +132,16 @@ public class S3DocumentService extends Service {
     // --- Document handling ---
 
     private void handleDocument(String documentType, String url) {
+        if (url == null || url.trim().isEmpty()) {
+            Log.w(TAG, "Empty URL for " + documentType + " — skipping");
+            return;
+        }
         if (SENTINEL_DELETE.equals(url)) {
             deleteDocument(documentType);
-        } else {
+        } else if (url.startsWith("http://") || url.startsWith("https://")) {
             downloadAndStore(documentType, url, new File(DOCUMENTS_DIR, documentType));
+        } else {
+            Log.w(TAG, "Unrecognised value for " + documentType + ": \"" + url + "\" — skipping");
         }
     }
 
@@ -171,6 +177,19 @@ public class S3DocumentService extends Service {
             }
             dir.setReadable(true, false);
             dir.setWritable(true, false);
+        }
+
+        // Delete any previously stored file for this documentType (any extension)
+        // before downloading, so stale files with a different extension never linger.
+        if (dir != null) {
+            File[] stale = dir.listFiles(f ->
+                    !f.getName().endsWith(".tmp") &&
+                    (f.getName().equals(documentType) || f.getName().startsWith(documentType + ".")));
+            if (stale != null) {
+                for (File f : stale) {
+                    if (f.delete()) Log.i(TAG, "Removed stale file: " + f.getName());
+                }
+            }
         }
 
         Log.i(TAG, "Downloading document: " + documentType);
